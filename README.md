@@ -1,8 +1,8 @@
 # Redpoint Codex MCP
 
 This repository contains the DungeonEscape-focused MCP server, deterministic agent orchestrator,
-approval-token component, and their automated tests. The tooling is maintained separately from the
-DungeonEscape game repository and operates on a DungeonEscape checkout supplied at startup.
+approval-token component, project knowledge index, and their automated tests. The tooling is maintained
+separately from the DungeonEscape game repository and operates on a DungeonEscape checkout supplied at startup.
 
 ## Projects
 
@@ -12,6 +12,8 @@ DungeonEscape game repository and operates on a DungeonEscape checkout supplied 
   workflow with an optional OpenAI-backed specialist executor.
 - `tools/Redpoint.WriteApproval` — shared cross-process approval-token contracts and HMAC
   implementation.
+- `tools/Redpoint.KnowledgeIndex` provides standalone, read-only, versioned source/documentation
+  indexing with deterministic offline and optional OpenAI embeddings, citations, and freshness checks.
 - The matching `.Tests` projects provide unit and real stdio integration coverage.
 
 ## Requirements
@@ -24,11 +26,14 @@ DungeonEscape game repository and operates on a DungeonEscape checkout supplied 
 ```powershell
 dotnet restore tools/Redpoint.Mcp.Tests/Redpoint.Mcp.Tests.csproj
 dotnet restore tools/Redpoint.AgentOrchestrator.Tests/Redpoint.AgentOrchestrator.Tests.csproj
+dotnet restore tools/Redpoint.KnowledgeIndex.Tests/Redpoint.KnowledgeIndex.Tests.csproj
 dotnet build tools/Redpoint.Mcp.Tests/Redpoint.Mcp.Tests.csproj --no-restore
 dotnet build tools/Redpoint.AgentOrchestrator.Tests/Redpoint.AgentOrchestrator.Tests.csproj --no-restore
+dotnet build tools/Redpoint.KnowledgeIndex.Tests/Redpoint.KnowledgeIndex.Tests.csproj --no-restore
 dotnet test tools/Redpoint.Mcp.Tests/Redpoint.Mcp.Tests.csproj --no-build
 $env:REDPOINT_TARGET_REPOSITORY_ROOT = "C:\path\to\DungeonEscape"
 dotnet test tools/Redpoint.AgentOrchestrator.Tests/Redpoint.AgentOrchestrator.Tests.csproj --no-build
+dotnet test tools/Redpoint.KnowledgeIndex.Tests/Redpoint.KnowledgeIndex.Tests.csproj --no-build
 ```
 
 When the repositories are siblings named `Redpoint-Codex-MCP` and `DungeonEscape`, the orchestrator
@@ -80,3 +85,12 @@ with `R`, or cancel with `C`; blank, unrecognized, redirected, or unavailable in
 Only after approval does trusted application code sign the authoritative prepared scope and call
 `apply_write`. QA runs after confirmed application. The workflow supports one existing UTF-8 text-file
 replacement, does not persist approvals, and performs no Git mutation.
+
+## Project knowledge index
+
+AI-030 adds an independent indexer; it does not expose retrieval through MCP or change any agent role.
+It reads an explicit Git-tracked corpus from a separate checkout and stores an atomic JSON index in the
+user's local application-data directory by default. The index records source hashes, commit metadata,
+provider/model identity, stable chunks, vectors, and line citations. Search refuses stale or incompatible
+indexes. See `tools/Redpoint.KnowledgeIndex/README.md` for corpus rules, CLI examples, provider setup,
+storage/removal instructions, limits, and security exclusions.

@@ -115,7 +115,9 @@ characters. `truncated` is set when a result or resource limit prevents a comple
 `read_script` accepts a required repository-relative file `path`, optional 1-based `startLine`
 (default `1`), and optional `lineCount` (default `100`, maximum `200`). Its typed result reports the
 requested and effective ranges, returned and total line counts, truncation, normalized relative path,
-and content. Files are limited to 1 MiB and returned content to 64 KiB of UTF-8 per call. A requested
+content, and the SHA-256 of the complete file. The hash lets a read-only specialist bind an exact
+proposal to inspected bytes without receiving write-tool access. Files are limited to 1 MiB and
+returned content to 64 KiB of UTF-8 per call. A requested
 range past EOF returns a deterministic empty result. Text line endings are normalized to `\n`.
 
 `list_scenes` takes no parameters. It deterministically discovers ordinary `.unity` files below

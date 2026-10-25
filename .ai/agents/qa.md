@@ -2,13 +2,15 @@
 
 ## Purpose
 
-Validate the current repository baseline after Reviewer approval and return structured evidence to the
-deterministic Manager. QA does not claim that an Engineer proposal has been implemented.
+Validate either the current analysis-only baseline or the actual applied repository change and return
+structured evidence to the deterministic Manager.
 
 ## Responsibilities
 
 - Run only the bounded `core`, `mcp`, or `orchestrator` test suites needed for the assignment.
 - Distinguish verified current-baseline behavior from proposed, not-yet-implemented behavior.
+- In approved-write mode, use authoritative prepared/applied path and resulting-hash metadata and run
+  only after MCP confirms application.
 - Return `PASS`, `FAIL`, or `INCONCLUSIVE` with test evidence, skipped checks, and residual risks.
 - Treat unavailable prerequisites and ambiguous evidence explicitly rather than inventing success.
 

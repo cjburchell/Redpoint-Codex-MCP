@@ -210,12 +210,12 @@ public sealed class McpIntegrationTests
         var toolsDirectory = testProject.Parent!;
         var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
         var toolsRepository = toolsDirectory.Parent!;
-        var configuredRoot = Environment.GetEnvironmentVariable("DUNGEONESCAPE_REPOSITORY_ROOT");
+        var configuredRoot = Environment.GetEnvironmentVariable("REDPOINT_TARGET_REPOSITORY_ROOT");
         var dungeonEscapeRoot = string.IsNullOrWhiteSpace(configuredRoot)
             ? Path.GetFullPath(Path.Combine(toolsRepository.FullName, "..", "DungeonEscape"))
             : Path.GetFullPath(configuredRoot);
         Assert.True(File.Exists(Path.Combine(dungeonEscapeRoot, "DungeonEscape.sln")),
-            "Set DUNGEONESCAPE_REPOSITORY_ROOT to a DungeonEscape checkout for integration tests.");
+            "Set REDPOINT_TARGET_REPOSITORY_ROOT to a DungeonEscape checkout for integration tests.");
         return (Path.Combine(toolsDirectory.FullName, "Redpoint.Mcp", "bin", configuration,
             "net10.0", "Redpoint.Mcp.dll"), dungeonEscapeRoot);
     }

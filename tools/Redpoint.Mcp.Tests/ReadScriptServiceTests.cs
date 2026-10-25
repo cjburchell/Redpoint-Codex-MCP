@@ -1,6 +1,7 @@
 using System.Text;
 using Redpoint.Mcp.Services;
 using Xunit;
+using System.Security.Cryptography;
 
 namespace Redpoint.Mcp.Tests;
 
@@ -28,10 +29,15 @@ public sealed class ReadScriptServiceTests : IDisposable
 
         Assert.Equal("DungeonEscape.Core/CoreThing.cs", core.Path);
         Assert.Equal("core", core.Content);
+        Assert.Equal(Hash("core"), core.Sha256);
         Assert.Equal("DungeonEscape.Unity/Assets/DungeonEscape/Scripts/UnityThing.cs", unity.Path);
         Assert.Equal("unity", unity.Content);
+        Assert.Equal(Hash("unity"), unity.Sha256);
         Assert.DoesNotContain(root, core.Path, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string Hash(string text) => Convert.ToHexString(
+        SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
 
     [Fact]
     public void DefaultsToFirstHundredLines()

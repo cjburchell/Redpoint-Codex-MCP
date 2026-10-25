@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Redpoint.WriteApproval;
 
 namespace Redpoint.AgentOrchestrator;
 
@@ -6,7 +7,8 @@ public enum AgentRole { Manager, UnityEngineer, Reviewer, QA }
 public enum ReviewVerdict { Approve, RequestChanges, Inconclusive }
 public enum QaOutcome { Pass, Fail, Inconclusive }
 public enum WorkflowStatus { Completed, Incomplete, NeedsHumanDecision, Failed }
-public enum WorkflowStage { Created, Engineer, Reviewer, QA, Completed }
+public enum WorkflowStage { Created, Engineer, Reviewer, PreparingChange, AwaitingHumanApproval, ApplyingChange, QA, Completed }
+public enum ApprovalOutcome { Approved, Rejected, Cancelled }
 
 public sealed record WorkflowRequest(string Task, IReadOnlyList<string> AcceptanceCriteria,
     IReadOnlyList<string> Constraints, IReadOnlyList<string> SuppliedContext);
@@ -14,12 +16,15 @@ public sealed record WorkflowRequest(string Task, IReadOnlyList<string> Acceptan
 public sealed record ManagerToEngineer(string WorkflowId, int Attempt, string Task,
     IReadOnlyList<string> AcceptanceCriteria, IReadOnlyList<string> Constraints,
     IReadOnlyList<string> RelevantContext, IReadOnlyList<string> AllowedTools,
-    IReadOnlyList<string> RequiredChanges);
+    IReadOnlyList<string> RequiredChanges, bool WriteEnabled = false);
+
+public sealed record ChangeProposal(string Path, string ExpectedOriginalSha256,
+    string ProposedContent, string Rationale);
 
 public sealed record EngineerToReviewer(string WorkflowId, int Attempt, string Interpretation,
     string ProposedSolution, IReadOnlyList<string> Components, IReadOnlyList<string> Assumptions,
     IReadOnlyList<string> ProposedValidation, IReadOnlyList<string> KnownRisks,
-    IReadOnlyList<ToolUse> ToolUses);
+    IReadOnlyList<ToolUse> ToolUses, ChangeProposal? Change = null);
 
 public sealed record ReviewAssignment(string WorkflowId, int Attempt, string Task,
     IReadOnlyList<string> AcceptanceCriteria, IReadOnlyList<string> Constraints,
@@ -32,7 +37,22 @@ public sealed record ReviewerToManager(string WorkflowId, int Attempt, ReviewVer
 public sealed record QaAssignment(string WorkflowId, int Attempt, string Task,
     IReadOnlyList<string> AcceptanceCriteria, IReadOnlyList<string> Constraints,
     EngineerToReviewer EngineerResult, ReviewerToManager ReviewerResult,
-    IReadOnlyList<string> AllowedTools);
+    IReadOnlyList<string> AllowedTools, PreparedWrite? PreparedChange = null,
+    AppliedWrite? AppliedChange = null);
+
+public sealed record PreparedWrite(string ProposalId, string Path, string OriginalSha256,
+    string ProposedSha256, int ProposedLength, string Preview, bool PreviewTruncated,
+    IReadOnlyList<string> Warnings);
+
+public sealed record AppliedWrite(string Status, string Path, string PreviousSha256,
+    string ResultingSha256, int CharactersWritten, string ProposalId, string ApprovalId,
+    IReadOnlyList<string> Warnings);
+
+public sealed record ApprovalDecision(string ProposalId, WriteApprovalScope Scope,
+    ApprovalOutcome Outcome, DateTimeOffset DecidedAtUtc, string? Actor);
+
+public sealed record HumanApprovalRequest(string TargetRepository, PreparedWrite Prepared,
+    ReviewVerdict ReviewerVerdict);
 
 public sealed record QaTestEvidence(string Suite, string Status, int? ExitCode,
     long DurationMilliseconds, IReadOnlyList<string> FailedTests, bool Truncated, string Summary);
@@ -52,7 +72,8 @@ public sealed record AgentExecutionResult<T>(AgentRole Role, T? Output, string? 
 
 public sealed record WorkflowResult(string WorkflowId, WorkflowStatus Status, int EngineerAttempts,
     int ReviewerAttempts, int QaAttempts, EngineerToReviewer? Proposal, ReviewerToManager? Review,
-    QaToManager? QA, string Summary);
+    QaToManager? QA, string Summary, PreparedWrite? PreparedChange = null,
+    AppliedWrite? AppliedChange = null, ApprovalDecision? HumanApproval = null);
 
 public sealed record ToolDescriptor(string Name, bool ReadOnly, bool Destructive, bool OpenWorld);
 public sealed record ToolCallResult(bool Succeeded, string Content, string? Error = null);

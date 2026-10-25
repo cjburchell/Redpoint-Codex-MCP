@@ -34,6 +34,24 @@ The orchestrator passes bounded tool results through without interpreting, index
 or copying them into traces. OpenAI receives only the typed assignment, role instructions, allowlisted
 schemas, and bounded tool results needed for the current specialist execution.
 
+## Approved-write mode
+
+`--mode approved-write` is an explicit alternative to the default `analysis` mode. The Engineer returns
+one typed `ChangeProposal`; the Reviewer receives its exact path, expected hash, full proposed content,
+and rationale. Reviewer `Approve` permits trusted preparation but is not human authorization.
+
+`TrustedApprovedWriteExecutor` first requires a clean target worktree and exact safe MCP descriptors,
+then calls `prepare_write` outside every model role. The console displays the authoritative proposal ID,
+canonical path, hashes, complete bounded preview, warnings, and Reviewer verdict. Truncated previews,
+redirected/missing input, blank input, and unknown responses fail closed. A positive human decision is
+bound to the exact `WriteApprovalScope`; only then does the parent-side issuer mint a short-lived token
+for the same MCP child and invoke `apply_write`. Keys and tokens never enter model assignments or traces.
+
+After a confirmed resulting hash, QA receives `PreparedWrite` and `AppliedWrite` metadata and validates
+the modified target. QA failure or inconclusive evidence requires human handling and never starts an
+automatic repair loop. Apply failures are not retried. This milestone supports one existing approved
+UTF-8 text file and no creation, deletion, multi-file transaction, Git mutation, or durable recovery.
+
 ## Build and offline tests
 
 ```powershell
@@ -53,6 +71,14 @@ dotnet run --project tools/Redpoint.AgentOrchestrator/Redpoint.AgentOrchestrator
 
 The scripted example receives Reviewer approval, runs the bounded orchestrator test suite as QA, prints
 deterministic trace transitions, and changes no tracked files.
+
+For a deterministic interactive write demonstration, use a disposable clean target checkout:
+
+```powershell
+dotnet run --project tools/Redpoint.AgentOrchestrator -- --demo --mode approved-write `
+  --repository-root C:\path\to\DisposableDungeonEscape `
+  --scripted-write-path DungeonEscape.Core/Example.cs
+```
 
 ## OpenAI-backed local workflow
 

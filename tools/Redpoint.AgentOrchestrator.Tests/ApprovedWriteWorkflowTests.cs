@@ -139,6 +139,22 @@ public sealed class ApprovedWriteWorkflowTests
     }
 
     [Fact]
+    public async Task FailedWorkingTreeValidationPreventsPreparationAndApproval()
+    {
+        var human = new FakeHuman(ApprovalOutcome.Approved);
+        var writer = new FakeWriter { FailClean = true };
+        var workflow = new OrchestrationWorkflow("write", Executor(ReviewVerdict.Approve, null, writer),
+            new NoTools(), new InMemoryWorkflowTraceSink(), writer, human);
+
+        var result = await workflow.RunApprovedWriteAsync(Request());
+
+        Assert.Equal(WorkflowStatus.Failed, result.Status);
+        Assert.Equal(0, writer.PrepareCalls);
+        Assert.Equal(0, human.Calls);
+        Assert.Equal(0, writer.ApplyCalls);
+    }
+
+    [Fact]
     public async Task TruncatedPreviewCannotReachHumanApproval()
     {
         var human = new FakeHuman(ApprovalOutcome.Approved);
@@ -269,14 +285,20 @@ public sealed class ApprovedWriteWorkflowTests
     {
         public string TargetRepository => "fixture";
         public bool FailPrepare { get; init; }
+        public bool FailClean { get; init; }
         public bool PreviewTruncated { get; init; }
+        public int PrepareCalls { get; private set; }
         public int ApplyCalls { get; private set; }
         public ChangeProposal? PreparedProposal { get; private set; }
-        public Task EnsureTargetCleanAsync(CancellationToken token) => Task.CompletedTask;
-        public PreparedWrite Prepared() => new("proposal", Change().Path, Original, Proposed,
-            12, "diff", PreviewTruncated, []);
+        public Task EnsureTargetCleanAsync(CancellationToken token) => FailClean
+            ? Task.FromException(new TrustedWriteException("working-tree-not-clean"))
+            : Task.CompletedTask;
+        public PreparedWrite Prepared() => new("prepared", "proposal", Change().Path, Original, Proposed,
+            10, 12, true, "diff", PreviewTruncated,
+            PreviewTruncated ? ["preview truncated"] : []);
         public Task<PreparedWrite> PrepareAsync(ChangeProposal proposal, CancellationToken token)
         {
+            PrepareCalls++;
             if (FailPrepare) throw new TrustedWriteException("prepare-failed");
             PreparedProposal = proposal;
             return Task.FromResult(Prepared());
@@ -332,7 +354,10 @@ public sealed class ApprovedWriteWorkflowTests
             CancellationToken token)
         {
             Calls.Add(name);
-            return Task.FromResult(new ToolCallResult(true, "{\"clean\":true}"));
+            return Task.FromResult(new ToolCallResult(true,
+                "{\"status\":\"available\",\"clean\":true,\"truncated\":false," +
+                "\"stagedIncluded\":true,\"unstagedIncluded\":true," +
+                "\"untrackedIncluded\":true,\"warnings\":[]}"));
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

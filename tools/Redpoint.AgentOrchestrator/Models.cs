@@ -40,9 +40,9 @@ public sealed record QaAssignment(string WorkflowId, int Attempt, string Task,
     IReadOnlyList<string> AllowedTools, PreparedWrite? PreparedChange = null,
     AppliedWrite? AppliedChange = null);
 
-public sealed record PreparedWrite(string ProposalId, string Path, string OriginalSha256,
-    string ProposedSha256, int ProposedLength, string Preview, bool PreviewTruncated,
-    IReadOnlyList<string> Warnings);
+public sealed record PreparedWrite(string Status, string ProposalId, string Path,
+    string OriginalSha256, string ProposedSha256, int OriginalLength, int ProposedLength,
+    bool ContentChanged, string Preview, bool PreviewTruncated, IReadOnlyList<string> Warnings);
 
 public sealed record AppliedWrite(string Status, string Path, string PreviousSha256,
     string ResultingSha256, int CharactersWritten, string ProposalId, string ApprovalId,

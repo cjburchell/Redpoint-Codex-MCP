@@ -56,8 +56,7 @@ public sealed class GitDiffService
             ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignored=no",
                 "--ignore-submodules=all"],
             cancellationToken);
-        if (!status.Started || status.TimedOut || status.ExitCode != 0 && !status.OutputTruncated
-            || status.InvalidUtf8)
+        if (!status.Started || status.TimedOut || status.ExitCode != 0 || status.InvalidUtf8)
             return Unavailable(includeStaged, includeUnstaged, includeUntrackedMetadata,
                 status.TimedOut ? "Git status timed out." : "Git status was unavailable or malformed.");
 
@@ -129,7 +128,8 @@ public sealed class GitDiffService
             }
         }
 
-        return new("available", parsed.Count == 0, truncated, includeStaged, includeUnstaged,
+        var clean = IsReliableClean(truncated, malformed, parsed.Count, warnings);
+        return new("available", clean, truncated, includeStaged, includeUnstaged,
             includeUntrackedMetadata, results, warnings);
     }
 
@@ -282,6 +282,10 @@ public sealed class GitDiffService
 
     private static GitDiffResult Unavailable(bool staged, bool unstaged, bool untracked, string warning) =>
         new("unavailable", false, false, staged, unstaged, untracked, [], [warning]);
+
+    internal static bool IsReliableClean(bool truncated, bool malformed, int parsedEntryCount,
+        IReadOnlyList<string> warnings) => !truncated && !malformed && parsedEntryCount == 0
+        && warnings.Count == 0;
 
     private sealed record StatusEntry(string Path, string? PreviousPath, string ChangeKind,
         bool Staged, bool Unstaged, bool Untracked);

@@ -9,7 +9,6 @@ public interface IHumanApprovalProvider
     Task<ApprovalDecision> DecideAsync(HumanApprovalRequest request,
         CancellationToken cancellationToken);
 }
-
 public interface IApprovedWriteExecutor
 {
     string TargetRepository { get; }
@@ -24,6 +23,8 @@ public sealed class TrustedApprovedWriteExecutor(IReadOnlyToolClient client,
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
         { PropertyNameCaseInsensitive = true };
+    private const int MaximumFileBytes = 1024 * 1024;
+    private const int MaximumPreviewCharacters = 128 * 1024;
 
     public string TargetRepository { get; } = Path.GetFullPath(targetRepository);
 
@@ -42,10 +43,27 @@ public sealed class TrustedApprovedWriteExecutor(IReadOnlyToolClient client,
         if (!result.Succeeded) throw new TrustedWriteException("prepare-failed");
         var prepared = JsonSerializer.Deserialize<PreparedWrite>(result.Content, JsonOptions)
             ?? throw new TrustedWriteException("malformed-prepare-result");
-        if (string.IsNullOrWhiteSpace(prepared.ProposalId)
-            || string.IsNullOrWhiteSpace(prepared.Path)
+        var proposedBytes = Encoding.UTF8.GetBytes(proposal.ProposedContent);
+        var proposedSha256 = Convert.ToHexString(
+            System.Security.Cryptography.SHA256.HashData(proposedBytes)).ToLowerInvariant();
+        var expectedProposalId = WriteProposalIdentity.Create(proposal.Path,
+            proposal.ExpectedOriginalSha256, proposedSha256, proposedBytes.Length);
+        if (prepared.Status != "prepared"
+            || prepared.ProposalId != expectedProposalId
+            || prepared.Path != proposal.Path
             || prepared.OriginalSha256 != proposal.ExpectedOriginalSha256
-            || prepared.ProposedLength != Encoding.UTF8.GetByteCount(proposal.ProposedContent))
+            || prepared.ProposedSha256 != proposedSha256
+            || prepared.OriginalLength is < 0 or > MaximumFileBytes
+            || prepared.ProposedLength != proposedBytes.Length
+            || prepared.ProposedLength > MaximumFileBytes
+            || !prepared.ContentChanged
+            || prepared.OriginalSha256 == prepared.ProposedSha256
+            || string.IsNullOrEmpty(prepared.Preview)
+            || prepared.Preview.Length > MaximumPreviewCharacters
+            || prepared.Warnings is null || prepared.Warnings.Count > 10
+            || prepared.Warnings.Any(warning => string.IsNullOrWhiteSpace(warning)
+                || warning.Length > 1024 || warning.Any(char.IsControl))
+            || prepared.PreviewTruncated && prepared.Warnings.Count == 0)
             throw new TrustedWriteException("prepare-result-mismatch");
         return prepared;
     }
@@ -59,10 +77,13 @@ public sealed class TrustedApprovedWriteExecutor(IReadOnlyToolClient client,
             maxFiles = 1, maxPatchCharacters = 1
         }), cancellationToken);
         if (!status.Succeeded) throw new TrustedWriteException("working-tree-check-failed");
-        using (var document = JsonDocument.Parse(status.Content))
-            if (!document.RootElement.TryGetPropertyIgnoreCase("clean", out var clean)
-                || clean.ValueKind != JsonValueKind.True)
-                throw new TrustedWriteException("working-tree-not-clean");
+        GitStatusEvidence? evidence;
+        try { evidence = JsonSerializer.Deserialize<GitStatusEvidence>(status.Content, JsonOptions); }
+        catch (JsonException) { throw new TrustedWriteException("working-tree-check-malformed"); }
+        if (evidence is null || evidence.Status != "available" || !evidence.Clean
+            || evidence.Truncated || !evidence.StagedIncluded || !evidence.UnstagedIncluded
+            || !evidence.UntrackedIncluded || evidence.Warnings is null || evidence.Warnings.Count != 0)
+            throw new TrustedWriteException("working-tree-not-clean");
     }
 
     public async Task<AppliedWrite> ApplyAsync(PreparedWrite prepared, ApprovalDecision decision,
@@ -105,6 +126,10 @@ public sealed class TrustedApprovedWriteExecutor(IReadOnlyToolClient client,
             || matches[0].Idempotent != idempotent)
             throw new TrustedWriteException("unsafe-tool-metadata");
     }
+
+    private sealed record GitStatusEvidence(string Status, bool Clean, bool Truncated,
+        bool StagedIncluded, bool UnstagedIncluded, bool UntrackedIncluded,
+        IReadOnlyList<string> Warnings);
 }
 
 public sealed class TrustedWriteException(string code) : InvalidOperationException(code)
@@ -120,8 +145,9 @@ public static class ChangeProposalValidator
     {
         if (proposal is null || string.IsNullOrWhiteSpace(proposal.Path)
             || proposal.Path.Length > 1024 || proposal.Path.Any(char.IsControl)
-            || proposal.Path.Contains("..", StringComparison.Ordinal)
+            || proposal.Path.Contains('\\')
             || Path.IsPathRooted(proposal.Path)
+            || proposal.Path.Split('/').Any(segment => segment is "" or "." or "..")
             || proposal.ExpectedOriginalSha256 is not { Length: 64 }
             || !proposal.ExpectedOriginalSha256.All(char.IsAsciiHexDigit)
             || string.IsNullOrEmpty(proposal.ProposedContent)
@@ -171,17 +197,4 @@ public sealed class ConsoleHumanApprovalProvider(TextReader input, TextWriter ou
     private ApprovalDecision Decision(ApprovalOutcome outcome, WriteApprovalScope scope) =>
         new(scope.ProposalId, scope, outcome, DateTimeOffset.UtcNow,
             string.IsNullOrWhiteSpace(actor) ? null : actor);
-}
-
-internal static class JsonElementExtensions
-{
-    internal static bool TryGetPropertyIgnoreCase(this JsonElement element, string name,
-        out JsonElement value)
-    {
-        foreach (var property in element.EnumerateObject())
-            if (property.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-            { value = property.Value; return true; }
-        value = default;
-        return false;
-    }
 }

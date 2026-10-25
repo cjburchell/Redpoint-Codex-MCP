@@ -1,10 +1,11 @@
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Redpoint.Mcp.Services;
 
 public sealed record ReadScriptResult(string Path, int RequestedStartLine, int RequestedEndLine,
     int EffectiveStartLine, int EffectiveEndLine, int LinesReturned, int? TotalLineCount,
-    bool Truncated, string Content);
+    bool Truncated, string Content, string Sha256);
 
 /// <summary>Bounded UTF-8 reads from one file governed by the shared repository content policy.</summary>
 public sealed class ReadScriptService(ProjectInfoService projectInfo)
@@ -33,7 +34,8 @@ public sealed class ReadScriptService(ProjectInfoService projectInfo)
             ?? throw new InvalidOperationException("DungeonEscape repository root is not available.");
         var normalizedPath = RepositoryContentPolicy.NormalizeRequestedPath(path, required: true)!;
         var file = RepositoryContentPolicy.ResolveApprovedFile(repositoryRoot, normalizedPath);
-        var text = ReadStrictUtf8(file, normalizedPath);
+        var decoded = ReadStrictUtf8(file, normalizedPath);
+        var text = decoded.Text;
 
         var selected = new List<string>();
         var totalLines = 0;
@@ -77,10 +79,10 @@ public sealed class ReadScriptService(ProjectInfoService projectInfo)
         var effectiveEnd = linesReturned == 0 ? Math.Min(totalLines, requestedStart - 1)
             : requestedStart + linesReturned - 1;
         return new(normalizedPath, requestedStart, requestedEnd, requestedStart, effectiveEnd,
-            linesReturned, totalLines, truncated, content.ToString());
+            linesReturned, totalLines, truncated, content.ToString(), decoded.Sha256);
     }
 
-    private static string ReadStrictUtf8(string file, string normalizedPath)
+    private static (string Text, string Sha256) ReadStrictUtf8(string file, string normalizedPath)
     {
         try
         {
@@ -100,7 +102,11 @@ public sealed class ReadScriptService(ProjectInfoService projectInfo)
                 throw new ArgumentException($"path exceeds the {MaximumFileBytes}-byte file limit.", nameof(normalizedPath));
             if (Array.IndexOf(bytes, (byte)0, 0, count) >= 0)
                 throw new ArgumentException("path contains binary content.", nameof(normalizedPath));
-            try { return StrictUtf8.GetString(bytes, 0, count); }
+            try
+            {
+                return (StrictUtf8.GetString(bytes, 0, count),
+                    Convert.ToHexString(SHA256.HashData(bytes.AsSpan(0, count))).ToLowerInvariant());
+            }
             catch (DecoderFallbackException)
             {
                 throw new ArgumentException("path is not valid UTF-8 text.", nameof(normalizedPath));

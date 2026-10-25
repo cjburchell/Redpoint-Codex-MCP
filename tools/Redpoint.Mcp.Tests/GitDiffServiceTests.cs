@@ -36,6 +36,7 @@ public sealed class GitDiffServiceTests : IDisposable
         Write("DungeonEscape.Core/both.cs", "working version\n");
 
         var result = await Service().GetAsync();
+        Assert.False(result.Clean);
 
         AssertEntry("DungeonEscape.Core/unstaged.cs", staged: false, unstaged: true);
         AssertEntry("DungeonEscape.Core/staged.cs", staged: true, unstaged: false);
@@ -104,6 +105,7 @@ public sealed class GitDiffServiceTests : IDisposable
         var result = await Service().GetAsync();
         var entry = Assert.Single(result.Entries);
 
+        Assert.False(result.Clean);
         Assert.Equal("DungeonEscape.Core/untracked secret.cs", entry.Path);
         Assert.True(entry.Untracked);
         Assert.Null(entry.Patch);
@@ -142,6 +144,7 @@ public sealed class GitDiffServiceTests : IDisposable
         var fileBound = await Service().GetAsync(maxFiles: 2);
         Assert.Equal(2, fileBound.Entries.Count);
         Assert.True(fileBound.Truncated);
+        Assert.False(fileBound.Clean);
 
         Git("add", ".");
         Git("commit", "-m", "large files");
@@ -189,6 +192,7 @@ public sealed class GitDiffServiceTests : IDisposable
         CreateIdentity();
         var noRepository = await Service().GetAsync();
         Assert.Equal("unavailable", noRepository.Status);
+        Assert.False(noRepository.Clean);
         Assert.Empty(noRepository.Entries);
 
         InitializeGit();
@@ -204,6 +208,16 @@ public sealed class GitDiffServiceTests : IDisposable
         var result = await Service("git", TimeSpan.Zero).GetAsync();
         Assert.Equal("unavailable", result.Status);
         Assert.Empty(result.Entries);
+    }
+
+    [Fact]
+    public void IncompleteOrMalformedStatusCannotBeClean()
+    {
+        Assert.False(GitDiffService.IsReliableClean(true, false, 0, []));
+        Assert.False(GitDiffService.IsReliableClean(false, true, 0, []));
+        Assert.False(GitDiffService.IsReliableClean(false, false, 0, ["incomplete"]));
+        Assert.False(GitDiffService.IsReliableClean(false, false, 1, []));
+        Assert.True(GitDiffService.IsReliableClean(false, false, 0, []));
     }
 
     private GitDiffService Service(string executable = "git", TimeSpan? timeout = null) =>

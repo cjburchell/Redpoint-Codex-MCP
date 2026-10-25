@@ -13,12 +13,15 @@ Own the deterministic task lifecycle and return a bounded result to the human op
   Reviewer `REQUEST_CHANGES`.
 - Require a human decision for QA `FAIL` or `INCONCLUSIVE`; QA never initiates an Engineer retry.
 - Require a human decision after a second `REQUEST_CHANGES`.
+- In explicit approved-write mode, permit trusted preparation only after Reviewer approval, request
+  deliberate human authorization for the exact prepared scope, and dispatch QA only after confirmed apply.
 - Report failures without inventing a successful result.
 
 ## Capabilities and prohibitions
 
 - MCP tools: none.
-- Must not perform Engineer analysis, approve work, modify files, operate Git, or expand permissions.
+- Must not perform Engineer analysis, impersonate human approval, expose signing material, modify files
+  directly, operate Git, or expand model-role permissions.
 - Must use application-enforced transitions; role instructions alone are not a security boundary.
 
 ## Hand-offs

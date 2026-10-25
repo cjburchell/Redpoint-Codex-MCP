@@ -16,8 +16,10 @@ public sealed class LlmAgentExecutor(ILlmClient client, LlmExecutionOptions opti
 
     public Task<AgentExecutionResult<EngineerToReviewer>> ExecuteEngineerAsync(
         ManagerToEngineer assignment, AgentExecutionContext context, CancellationToken cancellationToken) =>
-        ExecuteAsync<EngineerToReviewer>(AgentRole.UnityEngineer, assignment, context, EngineerSchema, "engineer_result",
-            ValidateEngineer, cancellationToken);
+        ExecuteAsync<EngineerToReviewer>(AgentRole.UnityEngineer, assignment, context,
+            assignment.WriteEnabled ? WriteEngineerSchema : EngineerSchema, "engineer_result",
+            value => ValidateEngineer(value) && (!assignment.WriteEnabled || ValidChange(value.Change)),
+            cancellationToken);
 
     public Task<AgentExecutionResult<ReviewerToManager>> ExecuteReviewerAsync(
         ReviewAssignment assignment, AgentExecutionContext context, CancellationToken cancellationToken) =>
@@ -179,6 +181,12 @@ public sealed class LlmAgentExecutor(ILlmClient client, LlmExecutionOptions opti
         && value.Components is not null && value.Assumptions is not null
         && value.ProposedValidation is not null && value.KnownRisks is not null && value.ToolUses is not null;
 
+    private static bool ValidChange(ChangeProposal? value)
+    {
+        try { ChangeProposalValidator.Validate(value); return true; }
+        catch (ArgumentException) { return false; }
+    }
+
     private static bool ValidateReviewer(ReviewerToManager value) =>
         !string.IsNullOrWhiteSpace(value.WorkflowId) && value.Attempt > 0
         && Enum.IsDefined(value.Verdict) && value.Findings is not null && value.RequiredChanges is not null
@@ -199,6 +207,10 @@ public sealed class LlmAgentExecutor(ILlmClient client, LlmExecutionOptions opti
 
     private const string EngineerSchema = """
         {"type":"object","properties":{"workflowId":{"type":"string"},"attempt":{"type":"integer"},"interpretation":{"type":"string"},"proposedSolution":{"type":"string"},"components":{"type":"array","items":{"type":"string"}},"assumptions":{"type":"array","items":{"type":"string"}},"proposedValidation":{"type":"array","items":{"type":"string"}},"knownRisks":{"type":"array","items":{"type":"string"}},"toolUses":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"succeeded":{"type":"boolean"}},"required":["name","succeeded"],"additionalProperties":false}}},"required":["workflowId","attempt","interpretation","proposedSolution","components","assumptions","proposedValidation","knownRisks","toolUses"],"additionalProperties":false}
+        """;
+
+    private const string WriteEngineerSchema = """
+        {"type":"object","properties":{"workflowId":{"type":"string"},"attempt":{"type":"integer"},"interpretation":{"type":"string"},"proposedSolution":{"type":"string"},"components":{"type":"array","items":{"type":"string"}},"assumptions":{"type":"array","items":{"type":"string"}},"proposedValidation":{"type":"array","items":{"type":"string"}},"knownRisks":{"type":"array","items":{"type":"string"}},"toolUses":{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"succeeded":{"type":"boolean"}},"required":["name","succeeded"],"additionalProperties":false}},"change":{"type":"object","properties":{"path":{"type":"string"},"expectedOriginalSha256":{"type":"string"},"proposedContent":{"type":"string"},"rationale":{"type":"string"}},"required":["path","expectedOriginalSha256","proposedContent","rationale"],"additionalProperties":false}},"required":["workflowId","attempt","interpretation","proposedSolution","components","assumptions","proposedValidation","knownRisks","toolUses","change"],"additionalProperties":false}
         """;
 
     private const string ReviewerSchema = """

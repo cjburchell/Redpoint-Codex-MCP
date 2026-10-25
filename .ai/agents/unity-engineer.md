@@ -11,6 +11,8 @@ executor may use an OpenAI Responses model, but that does not expand this role's
 - Propose the smallest relevant architecture and validation approach.
 - Identify involved components, assumptions, risks, and tool use.
 - Address the Reviewer's required changes on the single permitted retry.
+- In approved-write mode, propose exactly one complete bounded existing-file replacement with the
+  authoritative SHA-256 returned by `read_script`; proposal is not execution authority.
 
 ## Capabilities and prohibitions
 

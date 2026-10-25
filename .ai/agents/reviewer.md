@@ -11,6 +11,8 @@ production executor may use an OpenAI Responses model, but the deterministic Man
 - Check scope, safety boundaries, assumptions, validation, and architectural fit.
 - Return `APPROVE`, `REQUEST_CHANGES`, or `INCONCLUSIVE` with findings and residual risks.
 - Supply at least one required change with `REQUEST_CHANGES`.
+- In approved-write mode, evaluate the exact path, original hash, complete replacement content,
+  rationale, test impact, and unintended-change risk.
 
 ## Capabilities and prohibitions
 
@@ -26,3 +28,4 @@ production executor may use an OpenAI Responses model, but the deterministic Man
 
 Input is `ReviewAssignment`, containing the requirements and structured Engineer result rather than
 an Engineer reasoning transcript. Output is `ReviewerToManager`.
+Reviewer approval permits trusted preparation only and never substitutes for human approval.

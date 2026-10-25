@@ -23,15 +23,19 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
         var chunks = new List<KnowledgeChunk>();
         var now = DateTimeOffset.UtcNow;
         foreach (var file in snapshot.Files)
-        foreach (var part in KnowledgeChunker.Chunk(file.Path, KnowledgeCorpus.Decode(file)))
         {
-            var contentHash = KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes(part.Text));
-            var id = StableChunkId(file.Path, part.Start, part.End, contentHash);
-            if (reusable.TryGetValue(id, out var old))
-                chunks.Add(old with { SourceFileHash = file.Sha256, SourceCommit = snapshot.Commit, IndexedAtUtc = now });
-            else pending.Add((file, part.Start, part.End, part.Text, id, contentHash));
-            if (chunks.Count + pending.Count > MaximumChunks)
-                throw new InvalidOperationException($"Corpus exceeds the {MaximumChunks} chunk limit.");
+            var parts = KnowledgeChunker.Chunk(file.Path, KnowledgeCorpus.Decode(file));
+            for (var ordinal = 0; ordinal < parts.Count; ordinal++)
+            {
+                var part = parts[ordinal];
+                var contentHash = KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes(part.Text));
+                var id = StableChunkId(file.Path, ordinal, part.Start, part.End, contentHash);
+                if (reusable.TryGetValue(id, out var old))
+                    chunks.Add(old with { SourceFileHash = file.Sha256, SourceCommit = snapshot.Commit, IndexedAtUtc = now });
+                else pending.Add((file, part.Start, part.End, part.Text, id, contentHash));
+                if (chunks.Count + pending.Count > MaximumChunks)
+                    throw new InvalidOperationException($"Corpus exceeds the {MaximumChunks} chunk limit.");
+            }
         }
 
         foreach (var batch in pending.Chunk(MaximumEmbeddingBatch))
@@ -120,8 +124,9 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
         && index.Chunks.All(chunk => chunk.Embedding.Length == embeddings.Dimensions
                                      && chunk.Embedding.All(float.IsFinite));
 
-    private static string StableChunkId(string path, int start, int end, string contentHash) =>
-        KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes($"v{SchemaVersion}\n{path}\n{start}\n{end}\n{contentHash}"));
+    private static string StableChunkId(string path, int ordinal, int start, int end, string contentHash) =>
+        KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes(
+            $"v{SchemaVersion}\n{path}\n{ordinal}\n{start}\n{end}\n{contentHash}"));
 
     private static string DocumentType(string path) => path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
         ? "documentation" : "csharp";

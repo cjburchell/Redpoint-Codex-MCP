@@ -89,7 +89,7 @@ replacement, does not persist approvals, and performs no Git mutation.
 ## Project knowledge index
 
 AI-030 adds an independent indexer; it does not expose retrieval through MCP or change any agent role.
-It reads an explicit Git-visible corpus from a separate checkout and stores an atomic JSON index in the
+It reads an explicit Git-tracked corpus from a separate checkout and stores an atomic JSON index in the
 user's local application-data directory by default. The index records source hashes, commit metadata,
 provider/model identity, stable chunks, vectors, and line citations. Search refuses stale or incompatible
 indexes. See `tools/Redpoint.KnowledgeIndex/README.md` for corpus rules, CLI examples, provider setup,

@@ -43,12 +43,12 @@ public sealed class KnowledgeIndexTests : IDisposable
     [Fact]
     public async Task IgnoredExcludedAndUnapprovedFilesAreSkipped()
     {
-        Write(".gitignore", "memory-bank/local.md\n");
-        Write("memory-bank/local.md", "secret local context");
+        Write("memory-bank/tracked-local.md", "tracked but ignored local context");
+        Write(".gitignore", "memory-bank/local.md\nmemory-bank/tracked-local.md\n");
+        WriteUntracked("memory-bank/local.md", "secret local context");
         Write(".env", "TOKEN=secret");
         Write(".ai/private.md", "private");
         Write("DungeonEscape.Core/bin/Generated.cs", "generated");
-        Git("add", ".gitignore");
 
         var result = await Service().BuildAsync(root, default);
 
@@ -57,11 +57,29 @@ public sealed class KnowledgeIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task UntrackedApprovedSourceAndDocumentationAreExcluded()
+    {
+        Write("DungeonEscape.Core/Tracked.cs", "public class Tracked {}\n");
+        Write("memory-bank/tracked.md", "# Tracked\n");
+        WriteUntracked("DungeonEscape.Core/Local.cs", "public class Local {}\n");
+        WriteUntracked("memory-bank/local.md", "# Local\n");
+
+        var result = await Service().BuildAsync(root, default);
+
+        Assert.Contains(result.Index.Sources, source => source.Path == "DungeonEscape.Core/Tracked.cs");
+        Assert.Contains(result.Index.Sources, source => source.Path == "memory-bank/tracked.md");
+        Assert.DoesNotContain(result.Index.Sources, source => source.Path == "DungeonEscape.Core/Local.cs");
+        Assert.DoesNotContain(result.Index.Sources, source => source.Path == "memory-bank/local.md");
+    }
+
+    [Fact]
     public async Task BinaryMalformedUtf8AndOversizedFilesAreSkippedWithWarnings()
     {
         WriteBytes("DungeonEscape.Core/Binary.cs", [65, 0, 66]);
         WriteBytes("DungeonEscape.Core/Invalid.cs", [0xc3, 0x28]);
         WriteBytes("DungeonEscape.Core/Large.cs", new byte[KnowledgeCorpus.MaximumFileBytes + 1]);
+        Git("add", "--", "DungeonEscape.Core/Binary.cs", "DungeonEscape.Core/Invalid.cs",
+            "DungeonEscape.Core/Large.cs");
 
         var result = await Service().BuildAsync(root, default);
 
@@ -73,7 +91,8 @@ public sealed class KnowledgeIndexTests : IDisposable
     public async Task ApprovedCorpusFileDiscoveryIsBounded()
     {
         for (var i = 0; i <= KnowledgeCorpus.MaximumFiles; i++)
-            Write($"DungeonEscape.Core/Generated/{i:D4}.cs", "public class A {}\n");
+            WriteUntracked($"DungeonEscape.Core/Generated/{i:D4}.cs", "public class A {}\n");
+        Git("add", "--", "DungeonEscape.Core/Generated");
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => Service().BuildAsync(root, default));
         Assert.Contains(KnowledgeCorpus.MaximumFiles.ToString(), error.Message, StringComparison.Ordinal);
@@ -91,6 +110,7 @@ public sealed class KnowledgeIndexTests : IDisposable
         try
         {
             File.CreateSymbolicLink(link, Path.Combine(outside, "Escape.cs"));
+            Git("add", "--", "DungeonEscape.Core/Linked.cs");
             var result = await Service().BuildAsync(root, default);
             Assert.DoesNotContain(result.Index.Sources, x => x.Path.EndsWith("Linked.cs", StringComparison.Ordinal));
             Assert.Contains(result.Warnings, x => x.Contains("unsafe", StringComparison.Ordinal));
@@ -126,9 +146,69 @@ public sealed class KnowledgeIndexTests : IDisposable
     }
 
     [Fact]
+    public void OverlongLinesAreSplitDeterministicallyWithinHardBounds()
+    {
+        var maximum = KnowledgeChunker.MaximumChunkCharacters;
+        var exactly = KnowledgeChunker.Chunk("A.cs", new string('a', maximum));
+        Assert.Single(exactly);
+        Assert.Equal(maximum, exactly[0].Text.Length);
+
+        var overByOne = KnowledgeChunker.Chunk("A.cs", new string('b', maximum + 1));
+        Assert.Equal([maximum, 1], overByOne.Select(chunk => chunk.Text.Length));
+        Assert.All(overByOne, chunk => { Assert.Equal(1, chunk.Start); Assert.Equal(1, chunk.End); });
+
+        var veryLong = new string('c', 20_000);
+        var first = KnowledgeChunker.Chunk("A.cs", veryLong);
+        var second = KnowledgeChunker.Chunk("A.cs", veryLong);
+        Assert.Equal(first, second);
+        Assert.Equal(veryLong, string.Concat(first.Select(chunk => chunk.Text)));
+        Assert.All(first, AssertValidChunk);
+    }
+
+    [Fact]
+    public void SeveralOverlongLinesPreserveTextCitationsAndBoundedOverlap()
+    {
+        var lines = new[]
+        {
+            "short before",
+            new string('x', 9_000),
+            new string('y', 8_001),
+            "short after"
+        };
+        var chunks = KnowledgeChunker.Chunk("A.cs", string.Join('\n', lines));
+        Assert.All(chunks, AssertValidChunk);
+        Assert.Equal(lines[1], string.Concat(chunks.Where(chunk => chunk.Start == 2).Select(chunk => chunk.Text)));
+        Assert.Equal(lines[2], string.Concat(chunks.Where(chunk => chunk.Start == 3).Select(chunk => chunk.Text)));
+        Assert.Contains(chunks, chunk => chunk.Start == 1 && chunk.End == 1);
+        Assert.Contains(chunks, chunk => chunk.Start == 4 && chunk.End == 4);
+
+        var ordinary = KnowledgeChunker.Chunk("A.cs",
+            string.Join('\n', Enumerable.Repeat(new string('z', 1_000), 30)));
+        Assert.InRange(ordinary.Count, 2, 30);
+        Assert.All(ordinary, AssertValidChunk);
+    }
+
+    [Fact]
+    public void LongLineSplittingNeverBreaksSurrogatePairs()
+    {
+        var emoji = char.ConvertFromUtf32(0x1f9ed);
+        var text = new string('a', KnowledgeChunker.MaximumChunkCharacters - 1) + emoji
+                   + new string('b', KnowledgeChunker.MaximumChunkCharacters) + emoji;
+        var chunks = KnowledgeChunker.Chunk("A.cs", text);
+        Assert.Equal(text, string.Concat(chunks.Select(chunk => chunk.Text)));
+        Assert.All(chunks, chunk =>
+        {
+            AssertValidChunk(chunk);
+            AssertWellFormedUtf16(chunk.Text);
+            Assert.Equal(1, chunk.Start);
+            Assert.Equal(1, chunk.End);
+        });
+    }
+
+    [Fact]
     public async Task ChunkIdsAreStableAndUnchangedEmbeddingsAreReusedWithoutDuplicates()
     {
-        Write("DungeonEscape.Core/A.cs", "public class Inventory {}\n");
+        Write("DungeonEscape.Core/A.cs", new string('x', 20_000));
         var provider = new CountingEmbeddingProvider();
         var service = Service(provider);
         var first = await service.BuildAsync(root, default);
@@ -139,6 +219,8 @@ public sealed class KnowledgeIndexTests : IDisposable
         Assert.Equal(callsAfterFirst, provider.TextCount);
         Assert.Equal(second.Index.Chunks.Count, second.Index.Chunks.Select(x => x.Id).Distinct().Count());
         Assert.Equal(second.Index.Chunks.Count, second.ChunksReused);
+        Assert.All(second.Index.Chunks, chunk => Assert.InRange(chunk.Text.Length, 1,
+            KnowledgeChunker.MaximumChunkCharacters));
     }
 
     [Fact]
@@ -148,7 +230,11 @@ public sealed class KnowledgeIndexTests : IDisposable
         var service = Service();
         await service.BuildAsync(root, default);
         Write("DungeonEscape.Core/A.cs", "public class Changed {}\n");
+        var expectedHash = KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes("public class Changed {}\n"));
         Assert.Equal(IndexFreshness.Stale, await service.ValidateFreshnessAsync(root, default));
+        var changed = await service.BuildAsync(root, default);
+        Assert.Equal(expectedHash, Assert.Single(changed.Index.Sources,
+            source => source.Path.EndsWith("A.cs", StringComparison.Ordinal)).Sha256);
         File.Delete(Path.Combine(root, "DungeonEscape.Core", "A.cs"));
         var rebuilt = await service.BuildAsync(root, default);
         Assert.DoesNotContain(rebuilt.Index.Sources, x => x.Path.EndsWith("A.cs", StringComparison.Ordinal));
@@ -253,7 +339,32 @@ public sealed class KnowledgeIndexTests : IDisposable
         .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
         .Order(StringComparer.Ordinal).Select(path => $"{Path.GetRelativePath(root, path)}:{File.GetLastWriteTimeUtc(path).Ticks}:{new FileInfo(path).Length}").ToArray();
 
-    private void Write(string path, string content) => WriteBytes(path, Encoding.UTF8.GetBytes(content));
+    private static void AssertValidChunk((int Start, int End, string Text) chunk)
+    {
+        Assert.NotEmpty(chunk.Text);
+        Assert.InRange(chunk.Text.Length, 1, KnowledgeChunker.MaximumChunkCharacters);
+        Assert.InRange(chunk.End - chunk.Start + 1, 1, KnowledgeChunker.MaximumChunkLines);
+    }
+
+    private static void AssertWellFormedUtf16(string text)
+    {
+        for (var i = 0; i < text.Length; i++)
+        {
+            Assert.False(char.IsLowSurrogate(text[i]));
+            if (!char.IsHighSurrogate(text[i])) continue;
+            Assert.True(i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]));
+            i++;
+        }
+    }
+
+    private void Write(string path, string content)
+    {
+        WriteBytes(path, Encoding.UTF8.GetBytes(content));
+        Git("add", "--", path);
+    }
+
+    private void WriteUntracked(string path, string content) =>
+        WriteBytes(path, Encoding.UTF8.GetBytes(content));
     private void WriteBytes(string path, byte[] content)
     {
         var full = Path.Combine(root, path.Replace('/', Path.DirectorySeparatorChar));

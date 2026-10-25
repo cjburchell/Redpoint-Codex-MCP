@@ -6,7 +6,7 @@ security. `Redpoint.AgentOrchestrator` owns deterministic role transitions. `Red
 owns the shared HMAC token format used across the parent/child process boundary.
 
 `Redpoint.KnowledgeIndex` is a standalone read-only component, deliberately independent of MCP and the
-orchestrator. It selects a fixed DungeonEscape documentation/C# corpus from Git-visible files, applies
+orchestrator. It selects a fixed DungeonEscape documentation/C# corpus from Git-tracked files, applies
 canonical containment and reparse-point checks, creates deterministic bounded source-cited chunks, and
 persists versioned embeddings via atomic JSON replacement outside the target checkout. Its storage
 contract binds repository identity, complete file hashes, source commit, schema, provider/model, and
@@ -29,4 +29,4 @@ creation/deletion, approval persistence, or autonomous approval exists.
 
 Knowledge indexing never interprets repository text as instructions, executes indexed content, writes
 to DungeonEscape, or expands MCP/model permissions. Candidate discovery is bounded and uses fixed Git
-arguments solely to exclude ignored content and capture source version information.
+arguments solely to select tracked paths and capture source version information.

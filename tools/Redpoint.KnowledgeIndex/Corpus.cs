@@ -93,7 +93,16 @@ public sealed class KnowledgeCorpus
     private static async Task<IReadOnlyList<string>> ReadGitPathsAsync(string root,
         CancellationToken cancellationToken)
     {
-        using var process = StartGit(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"]);
+        var tracked = await ReadBoundedGitPathsAsync(root, ["ls-files", "--cached", "-z"], cancellationToken);
+        var ignored = await ReadBoundedGitPathsAsync(root,
+            ["ls-files", "--cached", "--ignored", "--exclude-standard", "-z"], cancellationToken);
+        return tracked.Except(ignored, StringComparer.Ordinal).ToArray();
+    }
+
+    private static async Task<IReadOnlyList<string>> ReadBoundedGitPathsAsync(string root, string[] arguments,
+        CancellationToken cancellationToken)
+    {
+        using var process = StartGit(root, arguments);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
         var approved = new List<string>();
         var current = new StringBuilder();
@@ -219,31 +228,60 @@ public static class KnowledgeChunker
             ? Enumerable.Range(1, lines.Length - 1).Where(i => lines[i].TrimStart().StartsWith('#')).ToHashSet()
             : Enumerable.Range(1, lines.Length - 1).Where(i => LooksLikeDeclaration(lines[i])).ToHashSet();
         var result = new List<(int, int, string)>();
-        var start = 0;
-        while (start < lines.Length)
+        var ordinaryStart = 0;
+        for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+        {
+            if (lines[lineIndex].Length <= MaximumChunkCharacters) continue;
+            AddOrdinaryChunks(lines, ordinaryStart, lineIndex, boundaries, result);
+            AddLongLineChunks(lines[lineIndex], lineIndex + 1, result);
+            ordinaryStart = lineIndex + 1;
+        }
+        AddOrdinaryChunks(lines, ordinaryStart, lines.Length, boundaries, result);
+        return result;
+    }
+
+    private static void AddOrdinaryChunks(string[] lines, int rangeStart, int rangeEnd,
+        IReadOnlySet<int> boundaries, ICollection<(int Start, int End, string Text)> result)
+    {
+        var start = rangeStart;
+        while (start < rangeEnd)
         {
             var end = start;
-            var chars = 0;
+            var characters = 0;
             var stoppedAtBoundary = false;
-            while (end < lines.Length)
+            while (end < rangeEnd)
             {
                 var next = lines[end].Length + (end == start ? 0 : 1);
-                if (end > start && (end - start >= MaximumChunkLines || chars + next > MaximumChunkCharacters)) break;
-                if (end > start && boundaries.Contains(end) && chars >= 500)
+                if (end > start && (end - start >= MaximumChunkLines
+                                    || characters + next > MaximumChunkCharacters)) break;
+                if (end > start && boundaries.Contains(end) && characters >= 500)
                 {
                     stoppedAtBoundary = true;
                     break;
                 }
-                chars += next;
+                characters += next;
                 end++;
             }
             if (end == start) end++;
-            var text = string.Join('\n', lines[start..end]).TrimEnd();
+            var text = string.Join('\n', lines[start..end]);
             if (text.Length > 0) result.Add((start + 1, end, text));
-            if (end >= lines.Length) break;
+            if (end >= rangeEnd) break;
             start = stoppedAtBoundary ? end : Math.Max(start + 1, end - OverlapLines);
         }
-        return result;
+    }
+
+    private static void AddLongLineChunks(string line, int lineNumber,
+        ICollection<(int Start, int End, string Text)> result)
+    {
+        var start = 0;
+        while (start < line.Length)
+        {
+            var end = Math.Min(line.Length, start + MaximumChunkCharacters);
+            if (end < line.Length && char.IsHighSurrogate(line[end - 1]) && char.IsLowSurrogate(line[end])) end--;
+            if (end <= start) throw new InvalidDataException("Unable to split an overlong Unicode line safely.");
+            result.Add((lineNumber, lineNumber, line[start..end]));
+            start = end;
+        }
     }
 
     private static bool LooksLikeDeclaration(string line)

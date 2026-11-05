@@ -30,3 +30,11 @@ creation/deletion, approval persistence, or autonomous approval exists.
 Knowledge indexing never interprets repository text as instructions, executes indexed content, writes
 to DungeonEscape, or expands MCP/model permissions. Candidate discovery is bounded and uses fixed Git
 arguments solely to select tracked paths and capture source version information.
+
+Knowledge search validates the same loaded index it returns against deterministic reconstruction of
+all current approved source chunks, including IDs, text, citation ranges, document types and hashes.
+Duplicate/missing/extra or inconsistent chunks fail closed. Persisted JSON reads are capped at 128 MiB;
+source/chunk collection counts are checked before typed deserialization. Stored vectors remain trusted
+local ranking-cache state: shape/finite checks do not authenticate provider provenance, while source
+reconstruction independently prevents fabricated cited evidence. No embedding API calls occur during
+freshness validation.

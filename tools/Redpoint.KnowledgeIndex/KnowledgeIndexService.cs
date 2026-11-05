@@ -16,7 +16,7 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
     {
         var snapshot = await corpus.ReadAsync(repositoryRoot, cancellationToken);
         var prior = await TryLoadAsync(cancellationToken);
-        var reusable = prior is not null && Compatible(prior)
+        var reusable = prior is not null && prior.RepositoryIdentity == snapshot.Identity && Compatible(prior)
             ? prior.Chunks.ToDictionary(chunk => chunk.Id, StringComparer.Ordinal)
             : new Dictionary<string, KnowledgeChunk>(StringComparer.Ordinal);
         var pending = new List<(CorpusFile File, int Start, int End, string Text, string Id, string ContentHash)>();
@@ -30,7 +30,8 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
                 var part = parts[ordinal];
                 var contentHash = KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes(part.Text));
                 var id = StableChunkId(file.Path, ordinal, part.Start, part.End, contentHash);
-                if (reusable.TryGetValue(id, out var old))
+                if (reusable.TryGetValue(id, out var old)
+                    && MatchesChunk(old, file.Path, part.Start, part.End, part.Text, contentHash))
                     chunks.Add(old with { SourceFileHash = file.Sha256, SourceCommit = snapshot.Commit, IndexedAtUtc = now });
                 else pending.Add((file, part.Start, part.End, part.Text, id, contentHash));
                 if (chunks.Count + pending.Count > MaximumChunks)
@@ -66,11 +67,39 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
         var index = await TryLoadAsync(cancellationToken);
         if (index is null) return IndexFreshness.Unavailable;
         if (!Compatible(index)) return IndexFreshness.Incompatible;
+        return await ValidateSnapshotAsync(index, repositoryRoot, cancellationToken);
+    }
+
+    private async Task<IndexFreshness> ValidateSnapshotAsync(KnowledgeIndex index, string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
         var current = await corpus.ReadAsync(repositoryRoot, cancellationToken);
         if (current.Identity != index.RepositoryIdentity) return IndexFreshness.Incompatible;
-        var sources = current.Files.Select(x => (x.Path, x.Sha256)).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
-        var stored = index.Sources.Select(x => (x.Path, x.Sha256)).OrderBy(x => x.Path, StringComparer.Ordinal).ToArray();
-        return sources.SequenceEqual(stored) ? IndexFreshness.Current : IndexFreshness.Stale;
+        var sources = current.Files.Select(x => (x.Path, x.Sha256, Bytes: (long)x.Bytes.Length))
+            .OrderBy(x => x.Path, StringComparer.Ordinal);
+        var stored = index.Sources.Select(x => (x.Path, x.Sha256, x.Bytes))
+            .OrderBy(x => x.Path, StringComparer.Ordinal);
+        if (!sources.SequenceEqual(stored)) return IndexFreshness.Stale;
+
+        var chunks = index.Chunks.ToDictionary(chunk => chunk.Id, StringComparer.Ordinal);
+        var expectedCount = 0;
+        foreach (var file in current.Files)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var parts = KnowledgeChunker.Chunk(file.Path, KnowledgeCorpus.Decode(file));
+            for (var ordinal = 0; ordinal < parts.Count; ordinal++)
+            {
+                if (++expectedCount > MaximumChunks) return IndexFreshness.Incompatible;
+                var part = parts[ordinal];
+                var hash = KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes(part.Text));
+                var id = StableChunkId(file.Path, ordinal, part.Start, part.End, hash);
+                if (!chunks.TryGetValue(id, out var chunk)
+                    || !MatchesChunk(chunk, file.Path, part.Start, part.End, part.Text, hash)
+                    || chunk.SourceFileHash != file.Sha256 || chunk.SourceCommit != index.SourceCommit)
+                    return IndexFreshness.Incompatible;
+            }
+        }
+        return expectedCount == chunks.Count ? IndexFreshness.Current : IndexFreshness.Incompatible;
     }
 
     public async Task<KnowledgeSearchResponse> SearchAsync(string repositoryRoot, string query, int maxResults,
@@ -84,7 +113,7 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
         var index = await TryLoadAsync(cancellationToken);
         if (index is null) return new(IndexFreshness.Unavailable, false, [], "No knowledge index is available.");
         if (!Compatible(index)) return new(IndexFreshness.Incompatible, false, [], "Embedding or schema is incompatible.");
-        var freshness = await ValidateFreshnessAsync(repositoryRoot, cancellationToken);
+        var freshness = await ValidateSnapshotAsync(index, repositoryRoot, cancellationToken);
         if (freshness != IndexFreshness.Current)
             return new(freshness, false, [], "The knowledge index is not current and cannot be used for retrieval.");
 
@@ -121,8 +150,22 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
     private bool Compatible(KnowledgeIndex index) => index.SchemaVersion == SchemaVersion
         && index.EmbeddingProvider == embeddings.ProviderId && index.EmbeddingModel == embeddings.ModelId
         && index.EmbeddingDimensions == embeddings.Dimensions
-        && index.Chunks.All(chunk => chunk.Embedding.Length == embeddings.Dimensions
-                                     && chunk.Embedding.All(float.IsFinite));
+        && index.Sources is not null && index.Sources.Count <= KnowledgeCorpus.MaximumFiles
+        && index.Sources.All(source => source is not null && source.Path is not null && source.Sha256 is not null)
+        && index.Sources.Select(source => source.Path).Distinct(StringComparer.Ordinal).Count() == index.Sources.Count
+        && index.Chunks is not null && index.Chunks.Count <= MaximumChunks
+        && index.Chunks.All(chunk => chunk is not null && chunk.Id is not null && chunk.Text is not null
+            && chunk.Path is not null && chunk.SchemaVersion == SchemaVersion
+            && chunk.EmbeddingProvider == embeddings.ProviderId && chunk.EmbeddingModel == embeddings.ModelId
+            && chunk.Text.Length <= KnowledgeChunker.MaximumChunkCharacters
+            && chunk.Embedding is not null && chunk.Embedding.Length == embeddings.Dimensions
+            && chunk.Embedding.All(float.IsFinite))
+        && index.Chunks.Select(chunk => chunk.Id).Distinct(StringComparer.Ordinal).Count() == index.Chunks.Count;
+
+    private static bool MatchesChunk(KnowledgeChunk chunk, string path, int start, int end,
+        string text, string contentHash) => chunk.Path == path && chunk.StartLine == start
+        && chunk.EndLine == end && chunk.Text == text && chunk.ContentHash == contentHash
+        && chunk.DocumentType == DocumentType(path);
 
     private static string StableChunkId(string path, int ordinal, int start, int end, string contentHash) =>
         KnowledgeCorpus.Hash(Encoding.UTF8.GetBytes(

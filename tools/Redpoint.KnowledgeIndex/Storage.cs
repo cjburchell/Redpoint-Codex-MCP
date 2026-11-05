@@ -4,6 +4,8 @@ namespace Redpoint.KnowledgeIndex;
 
 public sealed class JsonKnowledgeStore(string indexPath) : IKnowledgeStore
 {
+    public const int MaximumIndexBytes = 128 * 1024 * 1024;
+
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = false
@@ -24,6 +26,8 @@ public sealed class JsonKnowledgeStore(string indexPath) : IKnowledgeStore
                 await JsonSerializer.SerializeAsync(stream, index, JsonOptions, cancellationToken);
                 await stream.FlushAsync(cancellationToken);
             }
+            if (new FileInfo(temporary).Length > MaximumIndexBytes)
+                throw new InvalidDataException("Knowledge index exceeds the storage byte limit.");
             File.Move(temporary, IndexPath, true);
         }
         finally
@@ -39,7 +43,27 @@ public sealed class JsonKnowledgeStore(string indexPath) : IKnowledgeStore
         {
             await using var stream = new FileStream(IndexPath, FileMode.Open, FileAccess.Read, FileShare.Read,
                 65536, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var index = await JsonSerializer.DeserializeAsync<KnowledgeIndex>(stream, JsonOptions, cancellationToken);
+            if (stream.Length > MaximumIndexBytes)
+                throw new InvalidDataException("Knowledge index exceeds the storage byte limit.");
+            using var bytes = new MemoryStream();
+            var buffer = new byte[65536];
+            int read;
+            while ((read = await stream.ReadAsync(buffer, cancellationToken)) != 0)
+            {
+                if (bytes.Length + read > MaximumIndexBytes)
+                    throw new InvalidDataException("Knowledge index exceeds the storage byte limit.");
+                await bytes.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+            // Check collection bounds before allocating typed chunks and float arrays.
+            using var document = JsonDocument.Parse(bytes.GetBuffer().AsMemory(0, (int)bytes.Length));
+            var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !root.TryGetProperty("sources", out var sources) || sources.ValueKind != JsonValueKind.Array
+                || sources.GetArrayLength() > KnowledgeCorpus.MaximumFiles
+                || !root.TryGetProperty("chunks", out var chunks) || chunks.ValueKind != JsonValueKind.Array
+                || chunks.GetArrayLength() > KnowledgeIndexService.MaximumChunks)
+                throw new InvalidDataException("Knowledge index collections are missing or exceed limits.");
+            var index = root.Deserialize<KnowledgeIndex>(JsonOptions);
             if (index is null || index.SchemaVersion <= 0 || string.IsNullOrWhiteSpace(index.RepositoryIdentity)
                 || string.IsNullOrWhiteSpace(index.EmbeddingProvider) || string.IsNullOrWhiteSpace(index.EmbeddingModel)
                 || index.EmbeddingDimensions <= 0 || index.Sources is null || index.Chunks is null

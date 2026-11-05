@@ -23,7 +23,7 @@ Targets .NET 10 and uses the [official C# MCP SDK](https://github.com/modelconte
 - `Services/RunTestsService.cs`: fixed suite catalog and bounded no-shell test process execution.
 - `Tools/ControlledWriteTools.cs`: explicit prepare/apply MCP contracts and accurate write annotations.
 - `Services/ControlledWriteService.cs`: bounded preview, optimistic concurrency, approval, and atomic replacement.
-- `Services/RepositoryContentPolicy.cs`: shared approved roots, exclusions, extensions, and path resolution.
+- `Services/RepositoryContentPolicy.cs`: immutable injected DungeonEscape approved roots, exclusions, read/write extensions, and path resolution.
 - `Services/RepositoryPathSecurity.cs`: shared containment and reparse-point checks.
 - `Security/McpCapabilityCatalog.cs`: authoritative typed nine-tool metadata and side-effect inventory.
 - `../Redpoint.Mcp.Tests/`: xUnit discovery, metadata, boundary and real stdio tests.

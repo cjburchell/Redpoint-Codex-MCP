@@ -55,28 +55,28 @@ public sealed class ControlledWriteService
     public const int MaximumPreviewCharacters = 128 * 1024;
     private const int MaximumProposals = 100;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
-    private static readonly HashSet<string> WriteExtensions = new(StringComparer.OrdinalIgnoreCase)
-        { ".cs", ".json", ".md", ".txt", ".xml", ".yml", ".yaml" };
 
     private sealed record StoredProposal(PrepareWriteResult Public, string ProposedContent,
         DateTimeOffset ExpiresAtUtc);
     private readonly Dictionary<string, StoredProposal> proposals = new(StringComparer.Ordinal);
     private readonly Lock gate = new();
     private readonly ProjectInfoService projectInfo;
+    private readonly RepositoryContentPolicy contentPolicy;
     private readonly HmacWriteApprovalVerifier? approvalVerifier;
     private readonly ApprovalReplayRegistry replayRegistry;
     private readonly TimeProvider timeProvider;
     private readonly IFileReplacement replacement;
 
-    public ControlledWriteService(ProjectInfoService projectInfo, WriteApprovalVerifierConfiguration configuration,
+    public ControlledWriteService(ProjectInfoService projectInfo, RepositoryContentPolicy contentPolicy, WriteApprovalVerifierConfiguration configuration,
         TimeProvider timeProvider, ApprovalReplayRegistry replayRegistry)
-        : this(projectInfo, configuration.Verifier, timeProvider, replayRegistry, new AtomicFileReplacement()) { }
+        : this(projectInfo, contentPolicy, configuration.Verifier, timeProvider, replayRegistry, new AtomicFileReplacement()) { }
 
-    internal ControlledWriteService(ProjectInfoService projectInfo,
+    internal ControlledWriteService(ProjectInfoService projectInfo, RepositoryContentPolicy contentPolicy,
         HmacWriteApprovalVerifier? approvalVerifier, TimeProvider timeProvider,
         ApprovalReplayRegistry replayRegistry, IFileReplacement replacement)
     {
         this.projectInfo = projectInfo;
+        this.contentPolicy = contentPolicy;
         this.approvalVerifier = approvalVerifier;
         this.timeProvider = timeProvider;
         this.replayRegistry = replayRegistry;
@@ -210,12 +210,12 @@ public sealed class ControlledWriteService
         var root = projectInfo.DiscoverRepositoryRoot();
         if (root is null) throw new ControlledWriteException("repository-unavailable", "Repository is unavailable.");
         string normalized;
-        try { normalized = RepositoryContentPolicy.NormalizeRequestedPath(path, true)!; }
+        try { normalized = contentPolicy.NormalizeRequestedPath(path, true)!; }
         catch (ArgumentException exception) { throw new ControlledWriteException("path-rejected", exception.Message); }
         string fullPath;
-        try { fullPath = RepositoryContentPolicy.ResolveApprovedFile(root, normalized); }
+        try { fullPath = contentPolicy.ResolveApprovedFile(root, normalized); }
         catch (ArgumentException exception) { throw new ControlledWriteException("path-rejected", exception.Message); }
-        if (!WriteExtensions.Contains(Path.GetExtension(fullPath)))
+        if (!contentPolicy.IsApprovedWriteFile(fullPath))
             throw new ControlledWriteException("unsupported-extension", "Path extension is not approved for writes.");
         if (!File.Exists(fullPath))
             throw new ControlledWriteException("file-missing", "Only existing files can be replaced.");

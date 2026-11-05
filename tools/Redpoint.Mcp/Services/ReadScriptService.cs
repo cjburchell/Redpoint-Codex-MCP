@@ -8,7 +8,7 @@ public sealed record ReadScriptResult(string Path, int RequestedStartLine, int R
     bool Truncated, string Content, string Sha256);
 
 /// <summary>Bounded UTF-8 reads from one file governed by the shared repository content policy.</summary>
-public sealed class ReadScriptService(ProjectInfoService projectInfo)
+public sealed class ReadScriptService(ProjectInfoService projectInfo, RepositoryContentPolicy contentPolicy)
 {
     public const int DefaultLineCount = 100;
     public const int MaximumLineCount = 200;
@@ -32,8 +32,8 @@ public sealed class ReadScriptService(ProjectInfoService projectInfo)
 
         var repositoryRoot = projectInfo.DiscoverRepositoryRoot()
             ?? throw new InvalidOperationException("DungeonEscape repository root is not available.");
-        var normalizedPath = RepositoryContentPolicy.NormalizeRequestedPath(path, required: true)!;
-        var file = RepositoryContentPolicy.ResolveApprovedFile(repositoryRoot, normalizedPath);
+        var normalizedPath = contentPolicy.NormalizeRequestedPath(path, required: true)!;
+        var file = contentPolicy.ResolveApprovedFile(repositoryRoot, normalizedPath);
         var decoded = ReadStrictUtf8(file, normalizedPath);
         var text = decoded.Text;
 

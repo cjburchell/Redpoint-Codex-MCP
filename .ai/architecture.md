@@ -30,3 +30,9 @@ creation/deletion, approval persistence, or autonomous approval exists.
 Knowledge indexing never interprets repository text as instructions, executes indexed content, writes
 to DungeonEscape, or expands MCP/model permissions. Candidate discovery is bounded and uses fixed Git
 arguments solely to select tracked paths and capture source version information.
+
+MCP inspection and controlled writes receive the immutable built-in `RepositoryContentPolicy.DungeonEscape`
+through constructor injection. Approved roots are exposed as a read-only collection; extension and
+exclusion sets are frozen. The write extension subset lives in the same policy, while path security,
+size limits, capability metadata, approval verification, and role admission retain their existing
+boundaries. No external profile loading or additional project selection is enabled by this extraction.

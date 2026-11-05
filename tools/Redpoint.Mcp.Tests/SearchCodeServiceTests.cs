@@ -8,7 +8,7 @@ public sealed class SearchCodeServiceTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "DungeonEscapeSearchTests",
         Guid.NewGuid().ToString("N"));
-    private SearchCodeService Service => new(new ProjectInfoService(Path.GetTempPath(), root));
+    private SearchCodeService Service => new(new ProjectInfoService(Path.GetTempPath(), root), RepositoryContentPolicy.DungeonEscape);
 
     public SearchCodeServiceTests()
     {

@@ -44,6 +44,10 @@ local ranking-cache state: shape/finite checks do not authenticate provider prov
 reconstruction independently prevents fabricated cited evidence. No embedding API calls occur during
 freshness validation.
 
+Knowledge-index schema version 2 defines physical source lines without counting the synthetic empty
+split element after a final LF, CRLF or CR. Interior blank lines remain physical lines. Version-1 caches
+are incompatible and require an explicit rebuild; the default cache filename is `index-v2.json`.
+
 AI-031 adds optional `ContextToolGateway` around `RoleBasedToolGateway`; the local
 `retrieve_project_context` capability is offered only to UnityEngineer/Reviewer. Manager/QA cannot
 invoke it. All existing MCP calls still use the original authorization and exact descriptor checks;

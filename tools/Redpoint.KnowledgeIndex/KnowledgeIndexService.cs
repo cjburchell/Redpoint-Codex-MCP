@@ -5,7 +5,7 @@ namespace Redpoint.KnowledgeIndex;
 public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStore store,
     IEmbeddingProvider embeddings) : IKnowledgeIndexer, IKnowledgeSearch
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
     public const int MaximumChunks = 25_000;
     public const int MaximumEmbeddingBatch = 64;
     public const int MaximumQueryCharacters = 512;

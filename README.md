@@ -96,6 +96,9 @@ provider/model identity, stable chunks, vectors, and line citations. Search refu
 indexes. See `tools/Redpoint.KnowledgeIndex/README.md` for corpus rules, CLI examples, provider setup,
 storage/removal instructions, limits, and security exclusions.
 
+Knowledge-index schema 2 corrects physical end-line citations for newline-terminated files. Existing
+schema-1 caches must be rebuilt; they are rejected as incompatible and are never searched.
+
 ## Specialist retrieval quick start
 
 From this checkout, run `powershell -ExecutionPolicy Bypass -File scripts/run-knowledge-demo.ps1 -RepositoryRoot C:\path\to\DungeonEscape`

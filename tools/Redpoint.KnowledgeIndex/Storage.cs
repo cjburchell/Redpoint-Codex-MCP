@@ -86,6 +86,6 @@ public sealed class JsonKnowledgeStore(string indexPath) : IKnowledgeStore
         var identity = KnowledgeCorpus.RepositoryIdentity(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(repositoryRoot)))[..16];
         return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Redpoint", "KnowledgeIndex", identity, "index-v1.json");
+            "Redpoint", "KnowledgeIndex", identity, "index-v2.json");
     }
 }

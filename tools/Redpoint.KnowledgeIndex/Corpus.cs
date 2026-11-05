@@ -223,6 +223,7 @@ public static class KnowledgeChunker
     public static IReadOnlyList<(int Start, int End, string Text)> Chunk(string path, string content)
     {
         var lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
+        if (lines.Length > 1 && lines[^1].Length == 0) lines = lines[..^1];
         if (lines.Length == 1 && lines[0].Length == 0) return [];
         var boundaries = path.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
             ? Enumerable.Range(1, lines.Length - 1).Where(i => lines[i].TrimStart().StartsWith('#')).ToHashSet()

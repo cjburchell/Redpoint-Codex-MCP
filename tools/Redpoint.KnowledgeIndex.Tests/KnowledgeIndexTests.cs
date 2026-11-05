@@ -126,7 +126,7 @@ public sealed class KnowledgeIndexTests : IDisposable
     [Fact]
     public void MarkdownChunkingIsDeterministicAndCitationsAreAccurate()
     {
-        var text = "# First\nline 2\n" + new string('x', 600) + "\n# Second\nline 5";
+        var text = "# First\nline 2\n" + new string('x', 600) + "\n# Second\nline 5\n";
         var first = KnowledgeChunker.Chunk("README.md", text);
         var second = KnowledgeChunker.Chunk("README.md", text);
         Assert.Equal(first, second);
@@ -142,7 +142,41 @@ public sealed class KnowledgeIndexTests : IDisposable
         var chunks = KnowledgeChunker.Chunk("Inventory.cs", text);
         Assert.Collection(chunks,
             chunk => { Assert.Equal(1, chunk.Start); Assert.Equal(2, chunk.End); },
-            chunk => { Assert.Equal(3, chunk.Start); Assert.Equal(6, chunk.End); });
+            chunk => { Assert.Equal(3, chunk.Start); Assert.Equal(5, chunk.End); });
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\r\n")]
+    [InlineData("\r")]
+    public void TrailingLineTerminatorDoesNotCreateANonexistentPhysicalLine(string terminator)
+    {
+        var chunk = Assert.Single(KnowledgeChunker.Chunk("A.cs", "single line" + terminator));
+
+        Assert.Equal(1, chunk.Start);
+        Assert.Equal(1, chunk.End);
+        Assert.Equal("single line", chunk.Text);
+    }
+
+    [Fact]
+    public void InteriorBlankLinesArePreservedAndUsePhysicalLineNumbers()
+    {
+        const string expected = "first\n\nthird";
+        var withTrailingTerminator = Assert.Single(KnowledgeChunker.Chunk("A.cs", expected + "\n"));
+        var withoutTrailingTerminator = Assert.Single(KnowledgeChunker.Chunk("A.cs", expected));
+        var endingBlankLine = Assert.Single(KnowledgeChunker.Chunk("A.cs", "first\n\n"));
+
+        Assert.Equal((1, 3, expected), withTrailingTerminator);
+        Assert.Equal((1, 3, expected), withoutTrailingTerminator);
+        Assert.Equal((1, 2, "first\n"), endingBlankLine);
+    }
+
+    [Fact]
+    public void EmptyAndSingleLineFilesUseOnlyActualPhysicalLines()
+    {
+        Assert.Empty(KnowledgeChunker.Chunk("A.cs", ""));
+        var single = Assert.Single(KnowledgeChunker.Chunk("A.cs", "single line"));
+        Assert.Equal((1, 1, "single line"), single);
     }
 
     [Fact]
@@ -183,9 +217,10 @@ public sealed class KnowledgeIndexTests : IDisposable
         Assert.Contains(chunks, chunk => chunk.Start == 4 && chunk.End == 4);
 
         var ordinary = KnowledgeChunker.Chunk("A.cs",
-            string.Join('\n', Enumerable.Repeat(new string('z', 1_000), 30)));
+            string.Join('\n', Enumerable.Repeat(new string('z', 1_000), 30)) + "\n");
         Assert.InRange(ordinary.Count, 2, 30);
         Assert.All(ordinary, AssertValidChunk);
+        Assert.All(ordinary, chunk => Assert.InRange(chunk.End, 1, 30));
     }
 
     [Fact]
@@ -194,7 +229,7 @@ public sealed class KnowledgeIndexTests : IDisposable
         var emoji = char.ConvertFromUtf32(0x1f9ed);
         var text = new string('a', KnowledgeChunker.MaximumChunkCharacters - 1) + emoji
                    + new string('b', KnowledgeChunker.MaximumChunkCharacters) + emoji;
-        var chunks = KnowledgeChunker.Chunk("A.cs", text);
+        var chunks = KnowledgeChunker.Chunk("A.cs", text + "\r\n");
         Assert.Equal(text, string.Concat(chunks.Select(chunk => chunk.Text)));
         Assert.All(chunks, chunk =>
         {
@@ -250,6 +285,27 @@ public sealed class KnowledgeIndexTests : IDisposable
     }
 
     [Fact]
+    public async Task PreviousCitationSchemaRequiresRebuild()
+    {
+        Assert.Equal($"index-v{KnowledgeIndexService.SchemaVersion}.json",
+            Path.GetFileName(JsonKnowledgeStore.DefaultPath(root)));
+        var service = Service();
+        var built = await service.BuildAsync(root, default);
+        var previous = built.Index with
+        {
+            SchemaVersion = KnowledgeIndexService.SchemaVersion - 1,
+            Chunks = built.Index.Chunks.Select(chunk => chunk with
+                { SchemaVersion = KnowledgeIndexService.SchemaVersion - 1 }).ToArray()
+        };
+        await new JsonKnowledgeStore(indexPath).SaveAsync(previous, default);
+
+        Assert.Equal(IndexFreshness.Incompatible, await service.ValidateFreshnessAsync(root, default));
+        var search = await service.SearchAsync(root, "inventory", 5, 4_000, default);
+        Assert.Equal(IndexFreshness.Incompatible, search.Freshness);
+        Assert.Empty(search.Results);
+    }
+
+    [Fact]
     public async Task FailedBuildPreservesLastValidIndex()
     {
         var service = Service();
@@ -272,7 +328,7 @@ public sealed class KnowledgeIndexTests : IDisposable
         var result = await service.SearchAsync(root, "inventory save", 10, 8_000, default);
         Assert.Equal(IndexFreshness.Current, result.Freshness);
         Assert.Equal("DungeonEscape.Core/Inventory.cs", result.Results[0].Path);
-        Assert.Equal("DungeonEscape.Core/Inventory.cs:1-2", result.Results[0].Citation);
+        Assert.Equal("DungeonEscape.Core/Inventory.cs:1-1", result.Results[0].Citation);
 
         var bounded = await service.SearchAsync(root, "class", 1, 8_000, default);
         Assert.Single(bounded.Results);

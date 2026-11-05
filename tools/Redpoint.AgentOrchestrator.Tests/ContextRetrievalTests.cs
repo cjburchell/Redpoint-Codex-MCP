@@ -38,8 +38,8 @@ public sealed class ContextRetrievalTests : IDisposable
         Assert.Equal("Available", result.RootElement.GetProperty("status").GetString());
         Assert.Equal("Current", result.RootElement.GetProperty("freshness").GetString());
         var evidence = Assert.Single(result.RootElement.GetProperty("evidence").EnumerateArray());
-        Assert.Equal("README.md:1-3", evidence.GetProperty("citation").GetString());
-        Assert.Equal(Source, evidence.GetProperty("text").GetString());
+        Assert.Equal("README.md:1-2", evidence.GetProperty("citation").GetString());
+        Assert.Equal(Source.TrimEnd('\n'), evidence.GetProperty("text").GetString());
         Assert.Equal(built.Index.Sources[0].Sha256, evidence.GetProperty("sourceFileHash").GetString());
         var version = result.RootElement.GetProperty("version");
         Assert.Equal(built.Index.SourceCommit, version.GetProperty("sourceCommit").GetString());
@@ -234,7 +234,8 @@ public sealed class ContextRetrievalTests : IDisposable
         var evidence = new KnowledgeSearchResult("README.md", 1, 1, "inventory", 1,
             "README.md:1-1", new string('a', 64), new string('b', 64));
         var result = new ProjectContext(ContextStatus.Available, IndexFreshness.Current,
-            new(1, new string('c', 64), null, "offline", "test", 16, DateTimeOffset.UtcNow), [evidence]);
+            new(KnowledgeIndexService.SchemaVersion, new string('c', 64), null, "offline", "test", 16,
+                DateTimeOffset.UtcNow), [evidence]);
         result = kind switch
         {
             "oversized" => result with { Evidence = [evidence with { Text = new string('x', 8001) }] },

@@ -28,18 +28,23 @@ Expected output (counts and citation ranges depend on the checkout):
 "chunks": 740,
 "freshness": "Current"
 CONTEXT role=UnityEngineer status=Available
-EVIDENCE role=UnityEngineer citation=DungeonEscape.Core/Rules/StoreRules.cs:217-278
+EVIDENCE role=UnityEngineer citation=DungeonEscape.Core/Rules/StoreRules.cs:217-277
 CONTEXT role=Reviewer status=Available
-EVIDENCE role=Reviewer citation=DungeonEscape.Core/Rules/StoreRules.cs:217-278
+EVIDENCE role=Reviewer citation=DungeonEscape.Core/Rules/StoreRules.cs:217-277
 RESULT status=Completed engineerAttempts=1 reviewerAttempts=1 qaAttempts=1
 REVIEW Approve
 QA Pass suites=orchestrator
 ```
 
 The default demo index is in the platform local application-data directory under
-`Redpoint/KnowledgeIndex/ai-031-demo/index-v1.json`. `-IndexPath <absolute path>` overrides it.
+`Redpoint/KnowledgeIndex/ai-031-demo/index-v2.json`. `-IndexPath <absolute path>` overrides it.
 The script temporarily sets knowledge configuration and restores the previous environment afterward.
 It stops on any command failure. Deleting this generated JSON removes the demo cache.
+
+Schema version 2 corrects end-line citations for newline-terminated files. Schema-version-1 indexes
+are incompatible and are never searched. Rebuild them explicitly with `build` or `rebuild`; the default
+cache filename is now `index-v2.json`. If `REDPOINT_KNOWLEDGE_INDEX_PATH` points to an old custom file,
+keep the path and run `rebuild` to replace it atomically, or select a new absolute path and run `build`.
 
 ## Individual commands and configuration
 
@@ -47,7 +52,7 @@ It stops on any command failure. Deleting this generated JSON removes the demo c
 dotnet restore Redpoint.Codex.Mcp.slnx
 dotnet build Redpoint.Codex.Mcp.slnx --no-restore
 $target = 'E:\dev\cburchell\apps\DungeonEscape'
-$index = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Redpoint/KnowledgeIndex/ai-031-demo/index-v1.json'
+$index = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Redpoint/KnowledgeIndex/ai-031-demo/index-v2.json'
 
 dotnet run --no-build --project tools/Redpoint.KnowledgeIndex -- build --repository-root $target --index-path $index --provider offline --dimensions 4096
 dotnet run --no-build --project tools/Redpoint.KnowledgeIndex -- validate --repository-root $target --index-path $index --provider offline --dimensions 4096
@@ -171,9 +176,10 @@ and counts, never queries, evidence text, credentials, raw provider errors or hi
 
 ## Recorded local validation
 
-On Windows, the full solution built with zero warnings/errors and passed 404 tests (177 MCP, 191
-orchestrator, 36 knowledge index), with the opt-in live OpenAI test skipped because key/model
+On Windows, the full solution built with zero warnings/errors and passed 410 tests (177 MCP, 191
+orchestrator, 42 knowledge index), with the opt-in live OpenAI test skipped because key/model
 configuration was unavailable. The PowerShell demo script indexed 204 tracked files into 740 chunks,
-validated Current freshness, returned three citations to each specialist, and finished Completed with
-Reviewer Approve and QA Pass. The target DungeonEscape working tree stayed clean. Linux and actual
+validated Current freshness, returned three citations to each specialist including the corrected
+`StoreRules.cs:217-277`, and finished Completed with Reviewer Approve and QA Pass. The target DungeonEscape
+working tree stayed clean. Linux and actual
 OpenAI model/embedding requests were not exercised in this validation.

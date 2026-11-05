@@ -1,6 +1,6 @@
 param(
     [Parameter(Mandatory = $true)][string]$RepositoryRoot,
-    [string]$IndexPath = (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Redpoint/KnowledgeIndex/ai-031-demo/index-v1.json')
+    [string]$IndexPath = (Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Redpoint/KnowledgeIndex/ai-031-demo/index-v2.json')
 )
 
 $ErrorActionPreference = 'Stop'

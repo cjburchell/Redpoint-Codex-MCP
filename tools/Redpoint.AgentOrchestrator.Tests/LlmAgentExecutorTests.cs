@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Redpoint.KnowledgeIndex;
 using Xunit;
 
 namespace Redpoint.AgentOrchestrator.Tests;
@@ -447,7 +448,8 @@ public sealed class LlmAgentExecutorTests
         {
             Calls++;
             return Task.FromResult(new ProjectContext(ContextStatus.Available, Redpoint.KnowledgeIndex.IndexFreshness.Current,
-                new(1, new string('a', 64), null, "offline-deterministic", "token-hash-v1", 16, DateTimeOffset.UtcNow),
+                new(KnowledgeIndexService.SchemaVersion, new string('a', 64), null, "offline-deterministic",
+                    "token-hash-v1", 16, DateTimeOffset.UtcNow),
                 [new("README.md", 1, 1, Text, 1, "README.md:1-1", new string('b', 64), new string('c', 64))]));
         }
     }

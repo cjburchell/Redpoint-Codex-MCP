@@ -2,6 +2,14 @@
 
 ## Completed
 
+- Citation line correction: removed the synthetic final line produced when tracked sources end in LF,
+  CRLF or CR; preserved real blank lines, boundaries, overlap, long-line bounds and Unicode safety.
+  Knowledge schema 2 rejects version-1 caches and uses `index-v2.json`; migration requires an explicit
+  rebuild. Index search and Engineer/Reviewer gateway citations are covered end to end. Windows
+  validation: solution build zero warnings/errors; 410 tests passed (MCP 177, orchestrator 191,
+  knowledge index 42), with one opt-in live API test skipped. The offline DungeonEscape demo rebuilt
+  204 files/740 chunks, validated Current, cited StoreRules.cs:217-277, and completed Reviewer/QA gates.
+
 - AI-031: implemented opt-in specialist retrieval via bounded IContextProvider/ContextToolGateway,
   reusing AI-030 search. Engineer/Reviewer only; Manager/QA and MCP/approval permissions unchanged.
   Added current-snapshot citations/hashes/version metadata, strict query/result/text/call limits,

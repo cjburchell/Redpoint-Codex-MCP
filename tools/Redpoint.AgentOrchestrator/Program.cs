@@ -4,6 +4,7 @@ using Redpoint.AgentOrchestrator;
 
 var provider = Value(args, "--provider") ?? (args.Contains("--demo", StringComparer.Ordinal) ? "scripted" : null);
 var mode = Value(args, "--mode") ?? "analysis";
+var knowledgeEnabled = args.Contains("--knowledge", StringComparer.Ordinal);
 if (provider is null)
 {
     Console.WriteLine("Redpoint agent orchestrator. Use --demo or --provider openai --task \"<task>\".");
@@ -66,7 +67,7 @@ if (provider == "scripted")
         Console.Error.WriteLine("Scripted approved-write mode requires --scripted-write-path.");
         return 2;
     }
-    executor = Scripted(repositoryRoot, mode == "approved-write", scriptedPath);
+    executor = Scripted(repositoryRoot, mode == "approved-write", scriptedPath, knowledgeEnabled);
 }
 var configuration = new DirectoryInfo(AppContext.BaseDirectory).Parent!.Name;
 var serverDll = Path.Combine(toolsDirectory, "Redpoint.Mcp", "bin", configuration, "net10.0",
@@ -83,7 +84,20 @@ var workflowId = "local-" + Guid.NewGuid().ToString("N");
 var trace = new ConsoleWorkflowTraceSink();
 using var startupTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
 await using var mcp = await McpStdioToolClient.StartAsync(serverDll, repositoryRoot, startupTimeout.Token);
-var gateway = new RoleBasedToolGateway(mcp, trace, workflowId);
+IAgentToolGateway gateway = new RoleBasedToolGateway(mcp, trace, workflowId);
+if (knowledgeEnabled)
+{
+    try
+    {
+        gateway = new ContextToolGateway(gateway,
+            ContextConfiguration.Create(repositoryRoot, Environment.GetEnvironmentVariable), trace, workflowId);
+    }
+    catch (ArgumentException)
+    {
+        Console.Error.WriteLine("Invalid knowledge configuration. Check REDPOINT_KNOWLEDGE_PROVIDER, DIMENSIONS, MODEL, INDEX_PATH and required OPENAI_API_KEY. Values are not logged.");
+        return 2;
+    }
+}
 
 var request = new WorkflowRequest(task,
     [mode == "approved-write" ? "Provide exactly one safe existing-file replacement"
@@ -111,12 +125,17 @@ if (result.AppliedChange is not null)
     Console.WriteLine($"APPLIED path={result.AppliedChange.Path} hash={result.AppliedChange.ResultingSha256}");
 return result.Status == WorkflowStatus.Completed ? 0 : 1;
 
-static IAgentExecutor Scripted(string repositoryRoot, bool writeEnabled, string? scriptedPath) =>
+static IAgentExecutor Scripted(string repositoryRoot, bool writeEnabled, string? scriptedPath, bool knowledgeEnabled) =>
     new ScriptedAgentExecutor(
     async (assignment, context, cancellationToken) =>
     {
         var metadata = await context.Tools.CallAsync(AgentRole.UnityEngineer, "get_project_info",
             JsonSerializer.SerializeToElement(new { }), cancellationToken);
+        var citations = knowledgeEnabled
+            ? await DemoEvidence(AgentRole.UnityEngineer, context, cancellationToken) : [];
+        if (knowledgeEnabled && citations.Count == 0)
+            return AgentExecutionResult<EngineerToReviewer>.Failure(AgentRole.UnityEngineer,
+                "The retrieval demo requires current non-empty source evidence. Build the index and retry.");
         ChangeProposal? change = null;
         if (writeEnabled)
         {
@@ -133,33 +152,66 @@ static IAgentExecutor Scripted(string repositoryRoot, bool writeEnabled, string?
         }
         return AgentExecutionResult<EngineerToReviewer>.Success(AgentRole.UnityEngineer,
             new(assignment.WorkflowId, assignment.Attempt, "Analyze the supplied architecture context.",
-                "Add a key requirement to the existing interaction path and preserve opened-object persistence.",
+                knowledgeEnabled
+                    ? "Retrieved inventory/persistence evidence: " + string.Join(", ", citations)
+                    : "Add a key requirement to the existing interaction path and preserve opened-object persistence.",
                 ["Inventory rules", "Unity interaction path", "chest persistence"],
                 ["The supplied context describes the relevant boundaries."],
                 ["Core key-matching tests", "Unity locked/unlocked interaction test"],
                 ["Exact source locations require bounded source inspection."],
-                [new("get_project_info", metadata.Succeeded)], change));
+                knowledgeEnabled
+                    ? [new("get_project_info", metadata.Succeeded), new(ContextToolGateway.ToolName, true)]
+                    : [new("get_project_info", metadata.Succeeded)], change));
     },
-    (assignment, _, _) => Task.FromResult(AgentExecutionResult<ReviewerToManager>.Success(
-        AgentRole.Reviewer, new(assignment.WorkflowId, assignment.Attempt, ReviewVerdict.Approve,
-            ["Proposal respects the supplied boundary and identifies validation."], [],
-            ["Verify exact source locations before implementation."]))),
+    async (assignment, context, cancellationToken) =>
+    {
+        var citations = knowledgeEnabled
+            ? await DemoEvidence(AgentRole.Reviewer, context, cancellationToken) : [];
+        return AgentExecutionResult<ReviewerToManager>.Success(AgentRole.Reviewer,
+            new(assignment.WorkflowId, assignment.Attempt,
+                knowledgeEnabled && citations.Count == 0 ? ReviewVerdict.Inconclusive : ReviewVerdict.Approve,
+                knowledgeEnabled ? ["Independently retrieved evidence: " + string.Join(", ", citations)]
+                    : ["Proposal respects the supplied boundary and identifies validation."], [],
+                ["Scripted demonstration validates the retrieval path, not independent reasoning."]));
+    },
     async (assignment, context, cancellationToken) =>
     {
         var tests = await context.Tools.CallAsync(AgentRole.QA, "run_tests",
             JsonSerializer.SerializeToElement(new { suite = "orchestrator", timeoutSeconds = 120 }),
             cancellationToken);
+        using var testEvidence = tests.Succeeded ? JsonDocument.Parse(tests.Content) : null;
+        var passed = testEvidence is not null
+            && testEvidence.RootElement.GetProperty("status").GetString() == "passed"
+            && testEvidence.RootElement.GetProperty("exitCode").GetInt32() == 0;
         return AgentExecutionResult<QaToManager>.Success(AgentRole.QA,
             new(assignment.WorkflowId, assignment.Attempt,
-                tests.Succeeded ? QaOutcome.Pass : QaOutcome.Fail,
-                ["orchestrator"], [new("orchestrator", tests.Succeeded ? "passed" : "failed",
-                    tests.Succeeded ? 0 : 1, 0, [], false,
+                passed ? QaOutcome.Pass : QaOutcome.Fail,
+                ["orchestrator"], [new("orchestrator", passed ? "passed" : "failed",
+                    passed ? 0 : 1, 0, [], false,
                     "Existing orchestrator baseline was executed through bounded run_tests.")],
                 ["This validates the current baseline, not the unimplemented proposal."],
                 ["Post-implementation validation remains required."],
                 ["The proposal has not been implemented in this read-only workflow."],
                 [new("run_tests", tests.Succeeded)]));
     });
+
+static async Task<IReadOnlyList<string>> DemoEvidence(AgentRole role, AgentExecutionContext context,
+    CancellationToken cancellationToken)
+{
+    var result = await context.Tools.CallAsync(role, ContextToolGateway.ToolName,
+        JsonSerializer.SerializeToElement(new { query = "inventory persistence", maxResults = 3, maximumCharacters = 8000 }),
+        cancellationToken);
+    if (!result.Succeeded) return [];
+    using var json = JsonDocument.Parse(result.Content);
+    var status = json.RootElement.GetProperty("status").GetString();
+    Console.WriteLine($"CONTEXT role={role} status={status}");
+    if (status != "Available") return [];
+    var citations = json.RootElement.GetProperty("evidence").EnumerateArray()
+        .Select(item => item.GetProperty("citation").GetString()!).ToArray();
+    // These user-facing demo citations are not stored in operational traces; source text is not printed.
+    foreach (var citation in citations) Console.WriteLine($"EVIDENCE role={role} citation={citation}");
+    return citations;
+}
 
 static string? Value(string[] values, string name)
 {

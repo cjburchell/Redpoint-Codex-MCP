@@ -121,6 +121,8 @@ public sealed class McpStdioToolClient : IReadOnlyToolClient
         start.ArgumentList.Add("--repository-root");
         start.ArgumentList.Add(repositoryRoot);
         start.Environment[WriteApprovalKey.EnvironmentVariableName] = approvalKey.EncodeForChildEnvironment();
+        // QA baseline tests must not recursively launch live model workflows or incur API charges.
+        start.Environment.Remove("REDPOINT_RUN_LIVE_OPENAI_TESTS");
         var client = new McpStdioToolClient(Process.Start(start)
             ?? throw new InvalidOperationException("Could not start the MCP server."),
             new HmacWriteApprovalIssuer(approvalKey));

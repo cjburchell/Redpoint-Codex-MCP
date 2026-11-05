@@ -136,9 +136,11 @@ public sealed class KnowledgeIndexService(KnowledgeCorpus corpus, IKnowledgeStor
             }
             characters += item.Chunk.Text.Length;
             results.Add(new(item.Chunk.Path, item.Chunk.StartLine, item.Chunk.EndLine, item.Chunk.Text,
-                item.Score, $"{item.Chunk.Path}:{item.Chunk.StartLine}-{item.Chunk.EndLine}"));
+                item.Score, $"{item.Chunk.Path}:{item.Chunk.StartLine}-{item.Chunk.EndLine}",
+                item.Chunk.ContentHash, item.Chunk.SourceFileHash));
         }
-        return new(freshness, truncated, results);
+        return new(freshness, truncated, results, Version: new(index.SchemaVersion, index.RepositoryIdentity,
+            index.SourceCommit, index.EmbeddingProvider, index.EmbeddingModel, index.EmbeddingDimensions, index.BuiltAtUtc));
     }
 
     private async Task<KnowledgeIndex?> TryLoadAsync(CancellationToken cancellationToken)

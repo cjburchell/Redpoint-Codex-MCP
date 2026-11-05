@@ -5,13 +5,12 @@ validated DungeonEscape checkout. `Redpoint.Mcp` owns bounded repository capabil
 security. `Redpoint.AgentOrchestrator` owns deterministic role transitions. `Redpoint.WriteApproval`
 owns the shared HMAC token format used across the parent/child process boundary.
 
-`Redpoint.KnowledgeIndex` is a standalone read-only component, deliberately independent of MCP and the
-orchestrator. It selects a fixed DungeonEscape documentation/C# corpus from Git-tracked files, applies
+`Redpoint.KnowledgeIndex` is a standalone read-only component, independent of MCP transport. It selects a fixed DungeonEscape documentation/C# corpus from Git-tracked files, applies
 canonical containment and reparse-point checks, creates deterministic bounded source-cited chunks, and
 persists versioned embeddings via atomic JSON replacement outside the target checkout. Its storage
 contract binds repository identity, complete file hashes, source commit, schema, provider/model, and
 vector dimensions. Retrieval is allowed only when that evidence validates as current and compatible.
-AI-031, not AI-030, owns any future agent access to retrieval.
+AI-031 exposes bounded specialist retrieval through the orchestrator gateway.
 
 Analysis mode follows Manager → Engineer → Reviewer → QA. Approved-write mode inserts deterministic
 `PreparingChange`, `AwaitingHumanApproval`, and `ApplyingChange` stages after Reviewer approval. Models
@@ -44,3 +43,24 @@ source/chunk collection counts are checked before typed deserialization. Stored 
 local ranking-cache state: shape/finite checks do not authenticate provider provenance, while source
 reconstruction independently prevents fabricated cited evidence. No embedding API calls occur during
 freshness validation.
+
+AI-031 adds optional `ContextToolGateway` around `RoleBasedToolGateway`; the local
+`retrieve_project_context` capability is offered only to UnityEngineer/Reviewer. Manager/QA cannot
+invoke it. All existing MCP calls still use the original authorization and exact descriptor checks;
+the MCP server's nine-tool catalog is unchanged. `IContextProvider` is backed by AI-030 search, bound
+to the trusted startup repository/index/provider. No tool argument can select another root or index.
+
+Queries are capped at 512 printable characters, five results and 8,000 source-text characters. Per
+workflow limits are three calls per authorized role, six total and 24,000 reserved characters across
+retries. Reservations are consumed even on failure; role checks and budget reservations precede
+provider execution. A 30-second retrieval timeout and caller cancellation produce structured outcomes.
+LLM calls also consume the existing specialist tool budget. The returned exact snapshot includes
+source/content hashes, relative citations, freshness and version metadata. Missing/corrupt/stale/
+incompatible/empty/provider-failed results never manufacture evidence or trigger index rebuilding.
+
+Retrieved text stays in bounded tool-result envelopes as untrusted evidence. It is never interpolated
+into role instructions or operational traces. Trace events correlate workflow, role and retrieval ID,
+recording status/counts only. The existing Responses executor discovers the local capability through
+the same IAgentToolGateway used by scripted demonstrations. No deterministic workflow transitions or
+approval-token permissions change. Live API tests require a separate opt-in marker, stripped from MCP
+child environments so QA baseline tests cannot recursively invoke live agents.

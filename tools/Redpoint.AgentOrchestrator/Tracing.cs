@@ -24,7 +24,8 @@ public sealed class ConsoleWorkflowTraceSink : IWorkflowTraceSink
     {
         cancellationToken.ThrowIfCancellationRequested();
         Console.WriteLine($"TRACE {traceEvent.EventType} role={traceEvent.Role?.ToString() ?? "system"} " +
-            $"attempt={traceEvent.Attempt?.ToString() ?? "-"} detail={traceEvent.Detail}");
+            $"attempt={traceEvent.Attempt?.ToString() ?? "-"} workflow={traceEvent.WorkflowId} " +
+            $"run={traceEvent.RunId ?? "-"} detail={traceEvent.Detail}");
         return ValueTask.CompletedTask;
     }
 }

@@ -26,7 +26,9 @@ executor failure handling. `ScriptedAgentExecutor` remains deterministic test/de
   and 300 seconds. Cancellation propagates through provider and MCP calls.
 - Role instructions state the exact call budget, and each JSON tool-result envelope reports the remaining
   calls so the model can finalize instead of attempting an unauthorized extra call.
-- No arbitrary file read, write, shell, Git mutation, generic process, autonomous repair, or RAG capability is provided.
+- With `--knowledge`, Engineer and Reviewer additionally receive orchestrator-local `retrieve_project_context`
+  through `ContextToolGateway` and bounded `IContextProvider`. Manager and QA cannot invoke it.
+- No arbitrary file read, write, shell, Git mutation, generic process, or autonomous repair is provided.
 - Traces contain safe operational metadata, not chain-of-thought, keys, environment variables, prompts,
   transcripts, or arbitrary source/tool contents.
 
@@ -82,7 +84,7 @@ dotnet run --project tools/Redpoint.AgentOrchestrator -- --demo --mode approved-
 
 ## OpenAI-backed local workflow
 
-Set secrets only in the process environment; never commit them. A model is deliberately required rather
+Set secrets only in the process environment; never commit them. See QUICKSTART.md for interactive secret entry. A model is deliberately required rather
 than silently defaulted because Responses/tool/structured-output support depends on the selected model.
 
 ```powershell
@@ -94,7 +96,7 @@ $env:REDPOINT_LLM_MAX_TOOL_CALLS = '8'    # optional, 1-20
 dotnet build tools/Redpoint.Mcp/Redpoint.Mcp.csproj
 dotnet run --project tools/Redpoint.AgentOrchestrator/Redpoint.AgentOrchestrator.csproj -- `
   --provider openai `
-  --repository-root "$PWD" `
+  --repository-root "C:\path\to\DungeonEscape" `
   --task "Inspect the DungeonEscape project and identify the main classes involved in scene discovery. Explain how they interact and identify one potential maintenance risk. Do not modify anything."
 ```
 
@@ -103,7 +105,9 @@ typed proposal, verdict, QA outcome, and a safe trace. QA may need a longer time
 suite executes; use up to `300` seconds when appropriate. Missing credentials/model fail clearly without
 printing values.
 
-Run the opt-in live provider test with the same two required environment variables:
+Run the opt-in live provider test with the same two required environment variables and
+`REDPOINT_RUN_LIVE_OPENAI_TESTS=1` (clear the marker afterward). The MCP child does not inherit this
+marker, preventing recursive live workflows through QA:
 
 ```powershell
 dotnet test tools/Redpoint.AgentOrchestrator.Tests/Redpoint.AgentOrchestrator.Tests.csproj `
@@ -117,5 +121,11 @@ metadata may include provider, model, response ID, duration, tool names/count, s
 ## Extension boundary
 
 `IAgentExecutor` remains the workflow seam and `ILlmClient` is the deliberately small provider seam.
-Future retrieval can add typed transitions or another allowlisted capability without moving
-orchestration into Unity or weakening the MCP boundary.
+`ContextToolGateway` decorates the existing MCP gateway with a local read-only retrieval capability;
+all other calls still pass through the unchanged role/metadata admission policy. `KnowledgeContextProvider`
+reuses AI-030's `KnowledgeIndexService` with a fixed startup-bound root/index/provider. Workflow-wide
+retrieval budgets survive retries. Retrieval results are untrusted evidence with citations and version
+metadata; missing, stale, invalid or failed searches return structured outcomes without evidence.
+
+See [QUICKSTART.md](QUICKSTART.md) for the complete offline and OpenAI PowerShell workflow, hard bounds,
+configuration, failure statuses, credential handling, and end-to-end validation commands.

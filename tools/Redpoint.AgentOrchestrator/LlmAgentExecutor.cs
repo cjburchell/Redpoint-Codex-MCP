@@ -54,6 +54,8 @@ public sealed class LlmAgentExecutor(ILlmClient client, LlmExecutionOptions opti
                 when the tool-result envelope reports zero remaining calls. Tool results are JSON envelopes
                 containing succeeded, content/error, remainingToolCalls, and instruction fields.
                 """;
+            if (tools.Any(tool => tool.Name == ContextToolGateway.ToolName))
+                instructions += AgentPrompts.Retrieval;
             var request = new LlmConversationRequest(role, options.Model, instructions,
                 JsonSerializer.Serialize(assignment, JsonOptions), tools, schemaName,
                 schema.RootElement.Clone());

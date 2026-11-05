@@ -332,6 +332,121 @@ public sealed class KnowledgeIndexTests : IDisposable
         Assert.False(indexPath.StartsWith(root, StringComparison.OrdinalIgnoreCase));
     }
 
+    [Theory]
+    [InlineData("text")]
+    [InlineData("path")]
+    [InlineData("range")]
+    [InlineData("content-hash")]
+    [InlineData("source-hash")]
+    [InlineData("id")]
+    [InlineData("type")]
+    [InlineData("commit")]
+    [InlineData("provider")]
+    [InlineData("duplicate")]
+    [InlineData("missing")]
+    public async Task TamperedChunksCannotProduceCitedSearchResults(string mutation)
+    {
+        var provider = new CountingEmbeddingProvider();
+        var service = Service(provider);
+        var built = await service.BuildAsync(root, default);
+        var original = Assert.Single(built.Index.Chunks);
+        var changed = mutation switch
+        {
+            "text" => original with { Text = "fabricated inventory evidence" },
+            "path" => original with { Path = "../outside.md" },
+            "range" => original with { StartLine = 100, EndLine = 101 },
+            "content-hash" => original with { ContentHash = new string('a', 64) },
+            "source-hash" => original with { SourceFileHash = new string('b', 64) },
+            "id" => original with { Id = "forged" },
+            "type" => original with { DocumentType = "forged" },
+            "commit" => original with { SourceCommit = "forged" },
+            "provider" => original with { EmbeddingProvider = "forged" },
+            _ => original
+        };
+        IReadOnlyList<KnowledgeChunk> chunks = mutation switch
+        {
+            "duplicate" => [original, original],
+            "missing" => [],
+            _ => [changed]
+        };
+        await new JsonKnowledgeStore(indexPath).SaveAsync(built.Index with { Chunks = chunks }, default);
+        var calls = provider.TextCount;
+
+        Assert.Equal(IndexFreshness.Incompatible, await service.ValidateFreshnessAsync(root, default));
+        var result = await service.SearchAsync(root, "inventory", 5, 4000, default);
+        Assert.Equal(IndexFreshness.Incompatible, result.Freshness);
+        Assert.Empty(result.Results);
+        Assert.Equal(calls, provider.TextCount);
+    }
+
+    [Fact]
+    public async Task RebuildDoesNotReuseChunkWithFabricatedTextAndUnchangedId()
+    {
+        var service = Service();
+        var first = await service.BuildAsync(root, default);
+        var original = Assert.Single(first.Index.Chunks);
+        await new JsonKnowledgeStore(indexPath).SaveAsync(first.Index with
+        {
+            Chunks = [original with { Text = "fabricated inventory evidence" }]
+        }, default);
+
+        var rebuilt = await service.BuildAsync(root, default);
+        Assert.Equal(0, rebuilt.ChunksReused);
+        Assert.Equal(original.Text, Assert.Single(rebuilt.Index.Chunks).Text);
+        Assert.Equal(IndexFreshness.Current, await service.ValidateFreshnessAsync(root, default));
+    }
+
+    [Fact]
+    public async Task SearchValidatesTheSameIndexInstanceItReturns()
+    {
+        var built = await Service().BuildAsync(root, default);
+        var chunk = Assert.Single(built.Index.Chunks);
+        var store = new AlternatingStore(built.Index with
+        {
+            Chunks = [chunk with { Text = "fabricated inventory evidence" }]
+        }, built.Index);
+        var service = new KnowledgeIndexService(new KnowledgeCorpus(), store, new DeterministicEmbeddingProvider());
+
+        var result = await service.SearchAsync(root, "inventory", 5, 4000, default);
+        Assert.Empty(result.Results);
+        Assert.Equal(IndexFreshness.Incompatible, result.Freshness);
+        Assert.Equal(1, store.Loads);
+    }
+
+    [Fact]
+    public async Task OversizedPersistedIndexIsRejectedBeforeParsing()
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(indexPath)!);
+        await using (var file = File.Create(indexPath)) file.SetLength(JsonKnowledgeStore.MaximumIndexBytes + 1L);
+        await Assert.ThrowsAsync<InvalidDataException>(() => new JsonKnowledgeStore(indexPath).LoadAsync(default));
+        var result = await Service().SearchAsync(root, "inventory", 5, 4000, default);
+        Assert.Equal(IndexFreshness.Unavailable, result.Freshness);
+        Assert.Empty(result.Results);
+    }
+
+    [Theory]
+    [InlineData("chunks", KnowledgeIndexService.MaximumChunks + 1)]
+    [InlineData("sources", KnowledgeCorpus.MaximumFiles + 1)]
+    public async Task ExcessivePersistedCollectionsAreRejectedBeforeTypedDeserialization(string property, int count)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(indexPath)!);
+        var entries = string.Join(',', Enumerable.Repeat("{}", count));
+        var json = property == "chunks"
+            ? "{\"sources\":[],\"chunks\":[" + entries + "]}"
+            : "{\"chunks\":[],\"sources\":[" + entries + "]}";
+        await File.WriteAllTextAsync(indexPath, json);
+        var error = await Assert.ThrowsAsync<InvalidDataException>(() => new JsonKnowledgeStore(indexPath).LoadAsync(default));
+        Assert.Contains("collections", error.Message, StringComparison.Ordinal);
+    }
+
+    private sealed class AlternatingStore(KnowledgeIndex first, KnowledgeIndex second) : IKnowledgeStore
+    {
+        public int Loads { get; private set; }
+        public Task<KnowledgeIndex?> LoadAsync(CancellationToken cancellationToken) =>
+            Task.FromResult<KnowledgeIndex?>(++Loads == 1 ? first : second);
+        public Task SaveAsync(KnowledgeIndex index, CancellationToken cancellationToken) => throw new NotSupportedException();
+    }
+
     private KnowledgeIndexService Service(IEmbeddingProvider? provider = null) =>
         new(new KnowledgeCorpus(), new JsonKnowledgeStore(indexPath), provider ?? new DeterministicEmbeddingProvider());
 

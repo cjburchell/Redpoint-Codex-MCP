@@ -36,3 +36,11 @@ through constructor injection. Approved roots are exposed as a read-only collect
 exclusion sets are frozen. The write extension subset lives in the same policy, while path security,
 size limits, capability metadata, approval verification, and role admission retain their existing
 boundaries. No external profile loading or additional project selection is enabled by this extraction.
+
+Knowledge search validates the same loaded index it returns against deterministic reconstruction of
+all current approved source chunks, including IDs, text, citation ranges, document types and hashes.
+Duplicate/missing/extra or inconsistent chunks fail closed. Persisted JSON reads are capped at 128 MiB;
+source/chunk collection counts are checked before typed deserialization. Stored vectors remain trusted
+local ranking-cache state: shape/finite checks do not authenticate provider provenance, while source
+reconstruction independently prevents fabricated cited evidence. No embedding API calls occur during
+freshness validation.

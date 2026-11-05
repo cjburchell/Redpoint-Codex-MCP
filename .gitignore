@@ -2,6 +2,7 @@
 **/obj/
 TestResults/
 artifacts/
+*.knowledge-index.json
 .idea/
 .vs/
 .vscode/

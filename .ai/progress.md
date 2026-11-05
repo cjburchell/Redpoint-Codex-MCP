@@ -7,7 +7,8 @@
   exclusions, bounds, tool metadata, and approval behavior are unchanged. Startup registers only the
   built-in policy; project selection and external configuration remain future work.
   Windows validation: solution build has zero warnings/errors; MCP 177/177, orchestrator 149 passed
-  with the opt-in live API test skipped, knowledge index 20/20; git diff --check passed. Linux was not run.
+  with the opt-in live API test skipped, knowledge index 36/36 after incorporating AI-030 review fixes;
+  git diff --check passed. Linux unavailable (Docker Linux engine stopped; no general-purpose WSL distro).
 
 - AI-030 review hardening: verify persisted chunk evidence against deterministic current-corpus
   reconstruction, validate the exact searched snapshot, and avoid reuse of inconsistent chunks.

@@ -2,6 +2,14 @@
 
 ## Completed
 
+- RP-01: extracted the fixed DungeonEscape MCP content rules into an immutable, constructor-injected
+  policy shared by search, read, and controlled-write services. Approved roots, read/write extensions,
+  exclusions, bounds, tool metadata, and approval behavior are unchanged. Startup registers only the
+  built-in policy; project selection and external configuration remain future work.
+  Windows validation: solution build has zero warnings/errors; MCP 177/177, orchestrator 149 passed
+  with the opt-in live API test skipped, knowledge index 36/36 after incorporating AI-030 review fixes;
+  git diff --check passed. Linux unavailable (Docker Linux engine stopped; no general-purpose WSL distro).
+
 - AI-030 review hardening: verify persisted chunk evidence against deterministic current-corpus
   reconstruction, validate the exact searched snapshot, and avoid reuse of inconsistent chunks.
   Bound stored JSON to 128 MiB and preflight source/chunk counts before typed deserialization.

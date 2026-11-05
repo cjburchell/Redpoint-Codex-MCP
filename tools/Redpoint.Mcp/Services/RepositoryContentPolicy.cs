@@ -1,9 +1,15 @@
+using System.Collections.Frozen;
+
 namespace Redpoint.Mcp.Services;
 
-/// <summary>Shared approved repository content policy for bounded read-only MCP tools.</summary>
-public static class RepositoryContentPolicy
+/// <summary>Immutable built-in DungeonEscape content policy shared by bounded inspection and approved writes.</summary>
+public sealed class RepositoryContentPolicy
 {
-    public static readonly IReadOnlyList<string> ApprovedRoots =
+    public static RepositoryContentPolicy DungeonEscape { get; } = new();
+
+    private RepositoryContentPolicy() { }
+
+    public IReadOnlyList<string> ApprovedRoots { get; } = Array.AsReadOnly<string>(
     [
         "DungeonEscape.Core",
         "DungeonEscape.Unity/Assets/DungeonEscape/Scripts",
@@ -11,25 +17,31 @@ public static class RepositoryContentPolicy
         "tools",
         ".ai",
         "memory-bank"
-    ];
+    ]);
 
-    private static readonly HashSet<string> ExcludedDirectories = new(StringComparer.OrdinalIgnoreCase)
+    private readonly FrozenSet<string> excludedDirectories = new[]
     {
         ".git", "Library", "Temp", "Obj", "obj", "bin", "Build", "Builds", "Logs",
         "UserSettings", "TestResults", "artifacts"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    private static readonly HashSet<string> TextExtensions = new(StringComparer.OrdinalIgnoreCase)
+    private readonly FrozenSet<string> textExtensions = new[]
     {
         ".cs", ".csproj", ".sln", ".props", ".targets", ".razor", ".json", ".md", ".txt",
         ".xml", ".yml", ".yaml", ".ps1", ".sh", ".asmdef", ".uxml", ".uss"
-    };
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    public static bool IsExcludedDirectory(string name) => ExcludedDirectories.Contains(name);
+    private readonly FrozenSet<string> writeExtensions = new[]
+        { ".cs", ".json", ".md", ".txt", ".xml", ".yml", ".yaml" }
+        .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    public static bool IsApprovedTextFile(string path) => TextExtensions.Contains(Path.GetExtension(path));
+    public bool IsApprovedWriteFile(string path) => writeExtensions.Contains(Path.GetExtension(path));
 
-    public static string? NormalizeRequestedPath(string? path, bool required)
+    public bool IsExcludedDirectory(string name) => excludedDirectories.Contains(name);
+
+    public bool IsApprovedTextFile(string path) => textExtensions.Contains(Path.GetExtension(path));
+
+    public string? NormalizeRequestedPath(string? path, bool required)
     {
         if (path is null)
         {
@@ -49,7 +61,7 @@ public static class RepositoryContentPolicy
         return normalized;
     }
 
-    public static IReadOnlyList<string> ResolveSearchTargets(string repositoryRoot, string? normalizedPath)
+    public IReadOnlyList<string> ResolveSearchTargets(string repositoryRoot, string? normalizedPath)
     {
         var approved = GetApprovedRoots(repositoryRoot);
         if (normalizedPath is null)
@@ -57,7 +69,7 @@ public static class RepositoryContentPolicy
         return [ResolveExistingApprovedPath(repositoryRoot, approved, normalizedPath)];
     }
 
-    public static string ResolveApprovedFile(string repositoryRoot, string normalizedPath)
+    public string ResolveApprovedFile(string repositoryRoot, string normalizedPath)
     {
         var candidate = ResolveExistingApprovedPath(repositoryRoot, GetApprovedRoots(repositoryRoot), normalizedPath);
         if (!File.Exists(candidate)) throw new ArgumentException("path must identify an existing file.", nameof(normalizedPath));
@@ -68,7 +80,7 @@ public static class RepositoryContentPolicy
     public static string Relative(string repositoryRoot, string path) =>
         RepositoryPathSecurity.Relative(repositoryRoot, path);
 
-    private static string[] GetApprovedRoots(string repositoryRoot) => ApprovedRoots.Select(root =>
+    private string[] GetApprovedRoots(string repositoryRoot) => ApprovedRoots.Select(root =>
         Path.GetFullPath(Path.Combine(repositoryRoot, root.Replace('/', Path.DirectorySeparatorChar)))).ToArray();
 
     private static string ResolveExistingApprovedPath(string repositoryRoot, IReadOnlyList<string> approved,

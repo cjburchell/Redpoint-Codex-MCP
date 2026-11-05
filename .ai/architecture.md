@@ -31,6 +31,12 @@ Knowledge indexing never interprets repository text as instructions, executes in
 to DungeonEscape, or expands MCP/model permissions. Candidate discovery is bounded and uses fixed Git
 arguments solely to select tracked paths and capture source version information.
 
+MCP inspection and controlled writes receive the immutable built-in `RepositoryContentPolicy.DungeonEscape`
+through constructor injection. Approved roots are exposed as a read-only collection; extension and
+exclusion sets are frozen. The write extension subset lives in the same policy, while path security,
+size limits, capability metadata, approval verification, and role admission retain their existing
+boundaries. No external profile loading or additional project selection is enabled by this extraction.
+
 Knowledge search validates the same loaded index it returns against deterministic reconstruction of
 all current approved source chunks, including IDs, text, citation ranges, document types and hashes.
 Duplicate/missing/extra or inconsistent chunks fail closed. Persisted JSON reads are capped at 128 MiB;

@@ -6,8 +6,8 @@ public sealed record SearchCodeResult(string Query, string? SearchRoot, bool Tru
     IReadOnlyList<SearchCodeMatch> Matches);
 public sealed record SearchCodeMatch(string Path, int Line, string Snippet);
 
-/// <summary>Bounded literal UTF-8 search over hard-coded repository areas.</summary>
-public sealed class SearchCodeService(ProjectInfoService projectInfo)
+/// <summary>Bounded literal UTF-8 search over approved repository areas.</summary>
+public sealed class SearchCodeService(ProjectInfoService projectInfo, RepositoryContentPolicy contentPolicy)
 {
     public const int DefaultMaxResults = 20;
     public const int MaximumResults = 50;
@@ -17,7 +17,7 @@ public sealed class SearchCodeService(ProjectInfoService projectInfo)
     public const long MaximumTotalBytes = 25 * 1024 * 1024;
     public const int MaximumFiles = 5000;
 
-    public static IReadOnlyList<string> ApprovedRoots => RepositoryContentPolicy.ApprovedRoots;
+    public IReadOnlyList<string> ApprovedRoots => contentPolicy.ApprovedRoots;
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
@@ -30,8 +30,8 @@ public sealed class SearchCodeService(ProjectInfoService projectInfo)
 
         var repositoryRoot = projectInfo.DiscoverRepositoryRoot()
             ?? throw new InvalidOperationException("DungeonEscape repository root is not available.");
-        var normalizedPath = RepositoryContentPolicy.NormalizeRequestedPath(path, required: false);
-        var searchTargets = RepositoryContentPolicy.ResolveSearchTargets(repositoryRoot, normalizedPath);
+        var normalizedPath = contentPolicy.NormalizeRequestedPath(path, required: false);
+        var searchTargets = contentPolicy.ResolveSearchTargets(repositoryRoot, normalizedPath);
         var candidates = CollectCandidates(repositoryRoot, searchTargets);
         var matches = new List<SearchCodeMatch>();
         var truncated = candidates.Truncated;
@@ -104,7 +104,7 @@ public sealed class SearchCodeService(ProjectInfoService projectInfo)
             throw new ArgumentException("query must not contain control characters.", nameof(query));
     }
 
-    private static (IReadOnlyList<string> Paths, bool Truncated) CollectCandidates(string repositoryRoot,
+    private (IReadOnlyList<string> Paths, bool Truncated) CollectCandidates(string repositoryRoot,
         IReadOnlyList<string> searchTargets)
     {
         var paths = new List<string>();
@@ -149,7 +149,7 @@ public sealed class SearchCodeService(ProjectInfoService projectInfo)
                     if ((attributes & FileAttributes.ReparsePoint) != 0) continue;
                     if ((attributes & FileAttributes.Directory) != 0)
                     {
-                        if (!RepositoryContentPolicy.IsExcludedDirectory(Path.GetFileName(entry)) && !CollectDirectory(entry))
+                        if (!contentPolicy.IsExcludedDirectory(Path.GetFileName(entry)) && !CollectDirectory(entry))
                             return false;
                     }
                     else if (IsSearchableFile(entry) && !TryAdd(entry)) return false;
@@ -160,7 +160,7 @@ public sealed class SearchCodeService(ProjectInfoService projectInfo)
         }
     }
 
-    private static bool IsSearchableFile(string path) => RepositoryContentPolicy.IsApprovedTextFile(path);
+    private bool IsSearchableFile(string path) => contentPolicy.IsApprovedTextFile(path);
 
     private static string CreateSnippet(string line, int matchIndex, int queryLength)
     {

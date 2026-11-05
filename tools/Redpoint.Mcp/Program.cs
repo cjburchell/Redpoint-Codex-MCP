@@ -25,6 +25,7 @@ var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings
 });
 builder.Logging.AddConsole(options => options.LogToStandardErrorThreshold = LogLevel.Trace);
 builder.Services.AddSingleton(projectInfo);
+builder.Services.AddSingleton(RepositoryContentPolicy.DungeonEscape);
 builder.Services.AddSingleton<SearchCodeService>();
 builder.Services.AddSingleton<ReadScriptService>();
 builder.Services.AddSingleton<ListScenesService>();

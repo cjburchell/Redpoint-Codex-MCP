@@ -100,7 +100,35 @@ public sealed class SecurityPolicyTests : IDisposable
     [InlineData(".git/config")]
     public void SharedContentPolicyRejectsExcludedGeneratedDirectories(string path)
     {
-        Assert.Throws<ArgumentException>(() => RepositoryContentPolicy.NormalizeRequestedPath(path, true));
+        Assert.Throws<ArgumentException>(() => RepositoryContentPolicy.DungeonEscape.NormalizeRequestedPath(path, true));
+    }
+
+    [Fact]
+    public void DungeonEscapePolicyRootsCannotBeMutatedThroughCollectionInterfaces()
+    {
+        var roots = Assert.IsAssignableFrom<IList<string>>(RepositoryContentPolicy.DungeonEscape.ApprovedRoots);
+        Assert.True(roots.IsReadOnly);
+        Assert.Throws<NotSupportedException>(() => roots[0] = ".git");
+        Assert.Throws<NotSupportedException>(() => roots.Add("outside"));
+        Assert.Equal(new[] { "DungeonEscape.Core", "DungeonEscape.Unity/Assets/DungeonEscape/Scripts",
+            "DungeonEscape.Tools.GameEditor", "tools", ".ai", "memory-bank" }, roots);
+    }
+
+    [Theory]
+    [InlineData("file.CS", true, true)]
+    [InlineData("file.json", true, true)]
+    [InlineData("file.md", true, true)]
+    [InlineData("file.csproj", true, false)]
+    [InlineData("file.ps1", true, false)]
+    [InlineData("file.sh", true, false)]
+    [InlineData("file.go", false, false)]
+    [InlineData("file.ts", false, false)]
+    [InlineData("file.exe", false, false)]
+    public void DungeonEscapePolicyPreservesDistinctReadAndWritePermissions(string path, bool readable, bool writable)
+    {
+        var policy = RepositoryContentPolicy.DungeonEscape;
+        Assert.Equal(readable, policy.IsApprovedTextFile(path));
+        Assert.Equal(writable, policy.IsApprovedWriteFile(path));
     }
 
     public void Dispose()

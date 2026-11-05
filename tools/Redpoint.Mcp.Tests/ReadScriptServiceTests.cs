@@ -9,7 +9,7 @@ public sealed class ReadScriptServiceTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "DungeonEscapeReadTests",
         Guid.NewGuid().ToString("N"));
-    private ReadScriptService Service => new(new ProjectInfoService(Path.GetTempPath(), root));
+    private ReadScriptService Service => new(new ProjectInfoService(Path.GetTempPath(), root), RepositoryContentPolicy.DungeonEscape);
 
     public ReadScriptServiceTests()
     {

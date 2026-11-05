@@ -210,7 +210,7 @@ public sealed class ControlledWriteServiceTests : IDisposable
         var key = WriteApprovalKey.Generate();
         var localIssuer = new HmacWriteApprovalIssuer(key, clock);
         var replay = new ApprovalReplayRegistry(clock);
-        var failing = new ControlledWriteService(new ProjectInfoService(root, root),
+        var failing = new ControlledWriteService(new ProjectInfoService(root, root), RepositoryContentPolicy.DungeonEscape,
             new HmacWriteApprovalVerifier(key, clock), clock, replay, new FailingReplacement());
         var proposal = failing.Prepare("DungeonEscape.Core/Example.cs", "new", Hash("old"));
         var approval = localIssuer.Issue(Scope(proposal));
@@ -232,7 +232,7 @@ public sealed class ControlledWriteServiceTests : IDisposable
     private static WriteApprovalScope Scope(PrepareWriteResult proposal) => new(proposal.ProposalId,
         proposal.Path, proposal.OriginalSha256, proposal.ProposedSha256, proposal.ProposedLength);
     private ControlledWriteService CreateService(HmacWriteApprovalVerifier? verifier) => new(
-        new ProjectInfoService(root, root), verifier, clock, new ApprovalReplayRegistry(clock),
+        new ProjectInfoService(root, root), RepositoryContentPolicy.DungeonEscape, verifier, clock, new ApprovalReplayRegistry(clock),
         new AtomicFileReplacement());
     private static ControlledWriteException Error(Action action) => Assert.Throws<ControlledWriteException>(action);
     private string Write(string relative, string content)

@@ -23,3 +23,9 @@ without interpreting, indexing, caching, or persisting them. Specialists may als
 `get_git_diff` for structured local changes; this adds no Git mutation or generic command access.
 Every model-requested call passes through the same gateway. QA alone may use bounded `run_tests` after
 Reviewer approval; Engineer and Reviewer never receive it.
+
+With trusted startup `--knowledge`, Unity Engineer and Reviewer can also call the orchestrator-local
+`retrieve_project_context` through a bounded IContextProvider. Manager and QA have no retrieval access.
+The MCP catalog and existing role policies remain authoritative for MCP calls. Evidence is untrusted,
+source-cited and freshness-checked; budgets span the workflow and its bounded retry. See
+[the quick start](../../tools/Redpoint.AgentOrchestrator/QUICKSTART.md).

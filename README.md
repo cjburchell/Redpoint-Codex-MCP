@@ -88,9 +88,17 @@ replacement, does not persist approvals, and performs no Git mutation.
 
 ## Project knowledge index
 
-AI-030 adds an independent indexer; it does not expose retrieval through MCP or change any agent role.
+AI-030 supplies an independent indexer. AI-031 adds opt-in Engineer/Reviewer retrieval through the
+orchestrator gateway; MCP tools and Manager/QA permissions remain unchanged.
 It reads an explicit Git-tracked corpus from a separate checkout and stores an atomic JSON index in the
 user's local application-data directory by default. The index records source hashes, commit metadata,
 provider/model identity, stable chunks, vectors, and line citations. Search refuses stale or incompatible
 indexes. See `tools/Redpoint.KnowledgeIndex/README.md` for corpus rules, CLI examples, provider setup,
 storage/removal instructions, limits, and security exclusions.
+
+## Specialist retrieval quick start
+
+From this checkout, run `powershell -ExecutionPolicy Bypass -File scripts/run-knowledge-demo.ps1 -RepositoryRoot C:\path\to\DungeonEscape`
+to build an offline index and complete a scripted analysis workflow with real Engineer/Reviewer retrieval
+and bounded QA. See [the PowerShell quick-start guide](tools/Redpoint.AgentOrchestrator/QUICKSTART.md)
+for individual commands, OpenAI-backed specialists, budgets, expected outputs, and troubleshooting.

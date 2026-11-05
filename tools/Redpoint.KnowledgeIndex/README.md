@@ -1,6 +1,6 @@
 # Redpoint Knowledge Index
 
-This .NET 10 command-line tool builds and searches a bounded, source-cited knowledge index for a separate DungeonEscape Git checkout. It is independent of MCP transport and the AgentOrchestrator; AI-030 does not grant agents access to retrieval.
+This .NET 10 command-line tool builds and searches a bounded, source-cited knowledge index for a separate DungeonEscape Git checkout. It is independent of MCP transport. AI-031 reuses its search interface behind the orchestrator's bounded IContextProvider.
 
 ## Corpus and security
 
@@ -29,4 +29,4 @@ dotnet run --project tools/Redpoint.KnowledgeIndex -- search --repository-root C
 
 The default `offline-deterministic` 4,096-dimension token-hash provider needs no credentials and supports reproducible tests and local verification; it is lexical verification, not a substitute for production-quality semantic embeddings. For real embeddings use `--provider openai --model text-embedding-3-small --dimensions 1536`; the API key is read only from `OPENAI_API_KEY`. Requests are batched to 64 inputs, retry transient provider failures at most twice, honor cancellation, and validate dimensions and finite vector values. Indexes from different providers or models are never mixed.
 
-Search uses normalized cosine similarity, returns only positive-score evidence, enforces result and character budgets, and includes `path:start-end` citations. It does not provide an MCP tool, RAG agent integration, autonomous memory, or write capability.
+Search uses normalized cosine similarity, returns only positive-score evidence, enforces result and character budgets, and includes `path:start-end` citations. The indexer does not provide an MCP tool, autonomous memory, or source-write capability. AI-031 adds optional specialist access through the orchestrator; see [the quick start](../Redpoint.AgentOrchestrator/QUICKSTART.md). Search responses now include source/content hashes and version metadata from the same validated index snapshot; the persisted schema remains version 1.

@@ -44,13 +44,20 @@ public sealed record KnowledgeSearchResult(
     int EndLine,
     string Text,
     double Similarity,
-    string Citation);
+    string Citation,
+    string? ContentHash = null,
+    string? SourceFileHash = null);
 
 public sealed record KnowledgeSearchResponse(
     IndexFreshness Freshness,
     bool Truncated,
     IReadOnlyList<KnowledgeSearchResult> Results,
-    string? Warning = null);
+    string? Warning = null,
+    KnowledgeVersion? Version = null);
+
+/// <summary>Metadata of the exact validated search snapshot; commit is historical, hashes identify content.</summary>
+public sealed record KnowledgeVersion(int SchemaVersion, string RepositoryIdentity, string? SourceCommit,
+    string EmbeddingProvider, string EmbeddingModel, int EmbeddingDimensions, DateTimeOffset BuiltAtUtc);
 
 public interface IKnowledgeIndexer
 {
